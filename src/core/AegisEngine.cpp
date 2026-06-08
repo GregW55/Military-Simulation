@@ -197,7 +197,7 @@ void AegisEngine::Render() {
         MathUtils::Vec2 screenPos = map.WorldToScreen(transform.pos);
 
         if (registry.all_of<Warhead>(entity)) {
-            DrawCircleV({screenPos.x, screenPos.y}, 3.0f, ORANGE);
+            DrawCircleV({screenPos.x, screenPos.y}, 10000.0f, ORANGE);
             DrawCircleLines(screenPos.x, screenPos.y, 6.0f, RED); // Box them so they're obvious
         } else {
             Color c = iff.isHostile ? RED : BLUE;
