@@ -1,0 +1,207 @@
+{
+  "missiles": {
+    "TEMPLATE": {
+      "name": "",
+      "range_nm": 0.0,
+      "speed_kts": 0.0,
+      "acceleration_kts_sec": 0.0,
+      "seeker_type": "ACTIVE",
+      "seeker_range_nm": 0.0,
+      "is_interceptor": true,
+      "rcs_sqm": 0.0,
+      "cruise_altitude_m": 0.0,
+      "mass_kg": 0.0,
+      "area_m2": 0.0,
+      "thrust_newtons": 0.0,
+      "max_fuel_kg": 0.0,
+      "burn_rate_kg_sec": 0.0,
+      "warhead_yield": 0.0,
+      "lethal_radius_nm": 0.0
+    },
+    "SM_6": {
+      "name": "SM-6 ERAM",
+      "range_nm": 130.0,
+      "speed_kts": 3000.0,
+      "acceleration_kts_sec": 300.0,
+      "seeker_type": "ACTIVE",
+      "seeker_range_nm": 15.0,
+      "is_interceptor": true,
+      "rcs_sqm": 0.1,
+      "cruise_altitude_m": 25000.0,
+      "mass_kg": 1500.0,
+      "area_m2": 0.091,
+      "thrust_newtons": 250000.0,
+      "max_fuel_kg": 0.0,
+      "burn_rate_kg_sec": 55.0,
+      "warhead_yield": 100.0,
+      "lethal_radius_nm": 0.05
+    },
+    "SM_2": {
+      "name": "SM-2 Block III",
+      "range_nm": 90.0,
+      "speed_kts": 2400.0,
+      "acceleration_kts_sec": 580.0,
+      "seeker_type": "SEMI_ACTIVE",
+      "seeker_range_nm": 0.0,
+      "is_interceptor": true,
+      "rcs_sqm": 0.1,
+      "cruise_altitude_m": 15000.0,
+      "mass_kg": 708.0,
+      "area_m2": 0.091,
+      "thrust_newtons": 215000.0,
+      "max_fuel_kg": 0.0,
+      "burn_rate_kg_sec": 0.0,
+      "warhead_yield": 0.0,
+      "lethal_radius_nm": 0.0
+    },
+    "ESSM": {
+      "name": "RIM-162 ESSM",
+      "range_nm": 27.0,
+      "speed_kts": 2600.0,
+      "acceleration_kts_sec": 800.0,
+      "seeker_type": "SEMI_ACTIVE",
+      "seeker_range_nm": 0.0,
+      "is_interceptor": true,
+      "rcs_sqm": 0.05,
+      "cruise_altitude_m": 5000.0,
+      "mass_kg": 280.0,
+      "area_m2": 0.051,
+      "thrust_newtons": 115000.0,
+      "max_fuel_kg": 0.0,
+      "burn_rate_kg_sec": 0.0,
+      "warhead_yield": 0.0,
+      "lethal_radius_nm": 0.0
+    },
+    "TOMAHAWK": {
+      "name": "BGM-109 Tomahawk",
+      "range_nm": 900.0,
+      "speed_kts": 480.0,
+      "acceleration_kts_sec": 20.0,
+      "seeker_type": "ACTIVE",
+      "seeker_range_nm": 10.0,
+      "is_interceptor": false,
+      "rcs_sqm": 0.2,
+      "cruise_altitude_m": 100.0,
+      "mass_kg": 1300.0,
+      "area_m2": 0.212,
+      "thrust_newtons": 15000.0,
+      "max_fuel_kg": 0.0,
+      "burn_rate_kg_sec": 0.0,
+      "warhead_yield": 0.0,
+      "lethal_radius_nm": 0.0
+    },
+    "YJ_18": {
+      "name": "YJ-18 ASCM",
+      "range_nm": 290.0,
+      "speed_kts": 1800.0,
+      "acceleration_kts_sec": 150.0,
+      "seeker_type": "ACTIVE",
+      "seeker_range_nm": 20.0,
+      "is_interceptor": false,
+      "rcs_sqm": 0.1,
+      "cruise_altitude_m": 30.0,
+      "mass_kg": 2000.0,
+      "area_m2": 0.221,
+      "thrust_newtons": 155000.0,
+      "max_fuel_kg": 0.0,
+      "burn_rate_kg_sec": 0.0,
+      "warhead_yield": 0.0,
+      "lethal_radius_nm": 0.0
+    },
+    "HHQ_9": {
+      "name": "HHQ-9",
+      "range_nm": 100.0,
+      "speed_kts": 2700.0,
+      "acceleration_kts_sec": 400.0,
+      "seeker_type": "ACTIVE",
+      "seeker_range_nm": 15.0,
+      "is_interceptor": true,
+      "rcs_sqm": 0.1,
+      "cruise_altitude_m": 20000.0,
+      "mass_kg": 1300.0,
+      "area_m2": 0.173,
+      "thrust_newtons": 266000.0,
+      "max_fuel_kg": 0.0,
+      "burn_rate_kg_sec": 0.0,
+      "warhead_yield": 0.0,
+      "lethal_radius_nm": 0.0
+    }
+  },
+
+  "ships": {
+    "TEMPLATE": {
+      "name": "",
+      "radar_range_nm": 0.0,
+      "radar_scan_rate_sec": 2.0,
+      "max_speed_kts": 0.0,
+      "mast_height_m": 0.0,
+      "default_color": "",
+      "rcs_sqm": 0.0,
+      "loadout": {}
+    },
+    "ARLEIGH_BURKE": {
+      "name": "Arleigh Burke",
+      "radar_range_nm": 250.0,
+      "radar_scan_rate_sec": 0.5,
+      "max_speed_kts": 30.0,
+      "mast_height_m": 35.0,
+      "default_color": "BLUE",
+      "rcs_sqm": 5000.0,
+      "loadout": {
+        "SM_2": 50,
+        "SM_6": 20,
+        "TOMAHAWK": 26
+      }
+    },
+    "TYPE_055": {
+      "name": "Type 055",
+      "radar_range_nm": 250.0,
+      "radar_scan_rate_sec": 0.5,
+      "max_speed_kts": 32.0,
+      "mast_height_m": 38.0,
+      "default_color": "RED",
+      "rcs_sqm": 8000.0,
+      "loadout": {
+        "HHQ_9": 64,
+        "YJ_18": 48
+      }
+    },
+    "CARRIER": {
+      "name": "Nimitz Class",
+      "radar_range_nm": 300.0,
+      "radar_scan_rate_sec": 4.0,
+      "max_speed_kts": 30.0,
+      "mast_height_m": 55.0,
+      "default_color": "BLUE",
+      "rcs_sqm": 50000.0,
+      "loadout": {
+        "ESSM": 24
+      }
+    },
+    "KEE_LUNG": {
+      "name": "ROCN Kee Lung",
+      "radar_range_nm": 220.0,
+      "radar_scan_rate_sec": 4.0,
+      "max_speed_kts": 33.0,
+      "mast_height_m": 35.0,
+      "default_color": "BLUE",
+      "rcs_sqm": 10000.0,
+      "loadout": {
+        "SM_2": 60
+      }
+    },
+    "CHENG_KUNG": {
+      "name": "ROCN Cheng Kung",
+      "radar_range_nm": 150.0,
+      "radar_scan_rate_sec": 5.0,
+      "max_speed_kts": 29.0,
+      "mast_height_m": 28.0,
+      "default_color": "BLUE",
+      "rcs_sqm": 3000.0,
+      "loadout": {
+        "SM_2": 40,
+        "ESSM": 8
+      }
+    }
+  }
+}
