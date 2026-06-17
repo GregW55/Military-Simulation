@@ -15,18 +15,19 @@ void MapRenderer::LoadAssets(const ScenarioData &scenario) {
     ImageColorReplace(&heightMapImage, BLACK, BLANK);
     heightMapTexture = LoadTextureFromImage(heightMapImage);
     UnloadImage(heightMapImage);
-
-    std::cout << "MapRenderer: Successfully loaded " << tileTextures.size() << " map tiles" << std::endl;
 }
 
 void MapRenderer::UnloadAssets() {
-    // Loop through the dictionary and unload everything safely
-    for (auto& pair: tileTextures) {
+    for (auto& pair : tileTextures) {
         UnloadTexture(pair.second);
     }
-    tileTextures.clear();  // Empty the dictionary
+    tileTextures.clear();
 
-    UnloadTexture(heightMapTexture);
+    // Only unload if the texture was actually loaded (id != 0)
+    if (heightMapTexture.id != 0) {
+        UnloadTexture(heightMapTexture);
+        heightMapTexture = {};  // Zero it out so a second call is safe
+    }
 }
 
 void MapRenderer::DrawCropped(const Texture2D &tex, float x, float y,

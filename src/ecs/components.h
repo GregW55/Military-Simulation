@@ -95,7 +95,7 @@ struct RadarTrack {
 // Struct to hold successful radar pings
 struct RadarDetectionData {
     // Map of [Observer ID] -> [List of Target Coordinates]
-    std::unordered_map<uint32_t, std::vector<RadarTrack>> activeTracks;
+    std::unordered_map<entt::entity, std::vector<RadarTrack>> activeTracks;
 };
 
 struct SeekerHead {
@@ -118,5 +118,8 @@ struct AutonomousGuidance {
     float desiredStandoffNM = 0.0f;
     std::vector<MathUtils::Vec2> waypoints;
     size_t currentWaypointIndex = 0;
+    MathUtils::Vec2 cachedTargetPos = {0.0f, 0.0f};
+    float targetingCooldown = 0.0f;
+    bool hasTarget = false;
 };
 

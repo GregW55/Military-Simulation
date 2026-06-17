@@ -6,10 +6,6 @@
 
 class MapRenderer {
 public:
-    // This runs automatically when the program closes(Destructor).
-    ~MapRenderer() {
-        UnloadAssets();
-    }
     bool showElevation = false;
 
     // Pass the ScenarioData into the load and draw functions

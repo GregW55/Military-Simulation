@@ -14,7 +14,12 @@ void TacticalDataLoader::Load(const std::string &filepath) {
     }
 
     json j;
-    file >> j;
+    try {
+        file >> j;
+    } catch (const json::parse_error& e) {
+        std::cerr << "CRITICAL ERROR: units.json is malformed: " << e.what() << std::endl;
+        return;
+    }
 
     auto LoadFloat = [](const json& j, const std::string& key, float defaultVal, const std::string& unitName) {
         if (!j.contains(key)) {
@@ -82,7 +87,4 @@ void TacticalDataLoader::Load(const std::string &filepath) {
         TacticalDatabase::ships[key] = s;
     }
 
-    std::cout << "Successfully loaded Tactical Database: "
-              << TacticalDatabase::ships.size() << " Ships, "
-              << TacticalDatabase::missiles.size() << " Missiles." << std::endl;
 }

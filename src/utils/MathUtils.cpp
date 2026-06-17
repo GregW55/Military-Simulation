@@ -19,9 +19,9 @@ namespace MathUtils {
     }
 
     float WrapAngle(float angle) {
-        while (angle > 180.0f) angle -= 360.0f;
-        while (angle < -180.0f) angle += 360.0f;
-        return angle;
+        angle = std::fmod(angle + 180.0f, 360.0f);
+        if (angle < 0.0f) angle += 360.0f;
+        return angle - 180.0f;
     }
 
     float GetShortestAngleDiff(float current, float target) {

@@ -96,13 +96,11 @@ ScenarioData ScenarioParser::Load(const std::string& filepath) {
                     group.waypointsGeo.push_back({wLat, wLon});
                 }
             }
-
             data.groups.push_back(group);
         }
     } else {
         std::cerr << "WARNING: No unit groups found in scenario." << std::endl;
     }
 
-    std::cout << "Successfully loaded scenario: " << data.scenarioName << std::endl;
     return data;
 }

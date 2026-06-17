@@ -3,6 +3,13 @@
 #include "raylib.h" // ONLY for internal textures loading
 #include <cmath>
 
+MapProjection::~MapProjection() {
+    if (heightPixelsRaw) {
+        UnloadImageColors((Color*)heightPixelsRaw);
+        heightPixelsRaw = nullptr;
+    }
+}
+
 // Calculate x,y
 MathUtils::Vec2 MapProjection::GeoToPixel(const float lat, const float lon) {
     const float deltaLon = lon - originGeo.x;

@@ -6,6 +6,7 @@
 class MapProjection {
 public:
     MapProjection() = default;
+    ~MapProjection();
 
     MathUtils::Vec2 GeoToPixel(float lat, float lon);
     MathUtils::Vec2 GeoToNM(float lat, float lon);

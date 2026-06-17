@@ -22,7 +22,7 @@ public:
 
                 if (seeker->phase == GuidancePhase::MIDCOURSE_DATALINK) {
                     if (registry.valid(seeker->datalinkSource)) {
-                        auto& shipTracks = registry.ctx().get<RadarDetectionData>().activeTracks[static_cast<uint32_t>(seeker->datalinkSource)];
+                        auto& shipTracks = registry.ctx().get<RadarDetectionData>().activeTracks[seeker->datalinkSource];
 
                         float closestDist = 999999.0f;
                         for (const auto& track : shipTracks) {
@@ -58,7 +58,7 @@ public:
                     }
                 }
                 else if (seeker->phase == GuidancePhase::TERMINAL_PITBULL) {
-                    auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[static_cast<uint32_t>(entity)];
+                    auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[entity];
 
                     if (!myTracks.empty()) {
                         float closestDist = 999999.0f;
@@ -99,30 +99,43 @@ public:
                 auto* myIFF = registry.try_get<IFF>(entity);
                 if (!myIFF) continue;
 
-                float closestDistSq = 9999999.0f;
-                MathUtils::Vec2 targetPos = trans.pos;
-                bool foundTarget = false;
+                // Only re-scan for targets every 2 seconds, not every frame
+                brain->targetingCooldown -= deltaTime;
 
-                // --- Target Tracking Loop ---
-                auto& detectionData = registry.ctx().get<RadarDetectionData>();
-                uint32_t myId = static_cast<uint32_t>(entity);
+                if (brain->targetingCooldown <= 0.0f) {
+                    brain->targetingCooldown = 2.0f;  // Recalculate every 2 seconds
+                    brain->hasTarget = false;
 
-                if (detectionData.activeTracks.find(myId) != detectionData.activeTracks.end() &&
-                    !detectionData.activeTracks[myId].empty()) {
+                    float closestDistSq = std::numeric_limits<float>::max();
+                    auto allShips = registry.view<Transform2D, IFF, Hull>();
 
-                    targetPos = detectionData.activeTracks[myId][0].pos;
-                    closestDistSq = MathUtils::LengthSq(MathUtils::Sub(trans.pos, targetPos));
-                    foundTarget = true;
+                    for (auto other : allShips) {
+                        if (entity == other) continue;
+                        auto& otherIFF = registry.get<IFF>(other);
+                        if (myIFF->isHostile != otherIFF.isHostile) {
+                            auto& otherTrans = registry.get<Transform2D>(other);
+                            float distSq = MathUtils::LengthSq(MathUtils::Sub(trans.pos, otherTrans.pos));
+                            if (distSq < closestDistSq) {
+                                closestDistSq = distSq;
+                                brain->cachedTargetPos = otherTrans.pos;
+                                brain->hasTarget = true;
+                            }
+                        }
+                    }
                 }
 
-                float closestDist = std::sqrt(closestDistSq);
-                MathUtils::Vec2 toTarget = MathUtils::Sub(targetPos, trans.pos);
+                // Use the cached target instead of re-scanning
+                float closestDist = MathUtils::GetDistance(trans.pos, brain->cachedTargetPos);
+                MathUtils::Vec2 toTarget = MathUtils::Sub(brain->cachedTargetPos, trans.pos);
+                bool foundTarget = brain->hasTarget;
 
                 // --- Combat Interrupt ---
-                if (foundTarget && closestDist < 500.0f) {
+                auto* myRadar = registry.try_get<RadarEmitter>(entity);
+                float detectionRange = myRadar ? myRadar->rangeNM : 50.0f;
+
+                if (foundTarget && closestDist < detectionRange) {
                     if (brain->currentState == TacticalState::PATROL || brain->currentState == TacticalState::TRANSIT) {
                         brain->currentState = TacticalState::INTERCEPT;
-                        std::cout << "[AI] Target detected! Breaking patrol to intercept!" << std::endl;
                     }
                 }
 
@@ -146,10 +159,9 @@ public:
                     }
                     case TacticalState::INTERCEPT: {
                         if (foundTarget) {
-                            if (closestDist > brain->desiredStandoffNM) {
+                            if (closestDist > brain->desiredStandoffNM + 2.0f) {
                                 if (closestDist > MATH_EPSILON) {
-                                    MathUtils::Vec2 direction = MathUtils::Scale(toTarget, 1.0f / closestDist);
-                                    kin.headingVector = direction;
+                                    kin.headingVector = MathUtils::Scale(toTarget, 1.0f / closestDist);
                                 }
                                 kin.desiredSpeedKnots = kin.maxSpeedKnots;
                             } else {
@@ -163,13 +175,18 @@ public:
                     }
                     case TacticalState::STANDOFF: {
                         if (foundTarget) {
-                            if (closestDist > brain->desiredStandoffNM + 50.0f) {
-                                brain->currentState = TacticalState::INTERCEPT;
+                            if (closestDist > brain->desiredStandoffNM + 5.0f) {
+                                kin.headingVector = MathUtils::Scale(toTarget, 1.0f / closestDist);
+                                kin.desiredSpeedKnots = kin.maxSpeedKnots;
+                            } else if (closestDist < brain->desiredStandoffNM - 5.0f) {
+                                kin.headingVector = MathUtils::Scale(toTarget, -1.0f / closestDist);
+                                kin.desiredSpeedKnots = kin.maxSpeedKnots;
+                            } else {
+                                kin.desiredSpeedKnots = 0.0f; // Perfect firing spot
                             }
                         } else {
                             brain->currentState = TacticalState::PATROL;
                         }
-                        kin.desiredSpeedKnots = 0.0f;
                         break;
                     }
                     case TacticalState::PATROL: {
@@ -189,6 +206,29 @@ public:
                             kin.desiredSpeedKnots = kin.maxSpeedKnots;
                         } else {
                             kin.desiredSpeedKnots = 0.0f;
+                        }
+                        break;
+                    }
+                    case TacticalState::TRANSIT: {
+                        if (!brain->waypoints.empty()) {
+                            MathUtils::Vec2 destination = brain->waypoints.back(); // Head for final waypoint
+                            float distToDestination = MathUtils::GetDistance(trans.pos, destination);
+
+                            if (distToDestination > 0.5f) {
+                                // Still traveling - point toward destination and go full speed
+                                kin.headingVector = MathUtils::Scale(
+                                    MathUtils::Sub(destination, trans.pos),
+                                    1.0f / distToDestination
+                                );
+                                kin.desiredSpeedKnots = kin.maxSpeedKnots;
+                            } else {
+                                // Arrived - hand off to patrol behavior
+                                brain->currentState = TacticalState::PATROL;
+                                brain->currentWaypointIndex = 0;
+                            }
+                        } else {
+                            // No waypoints assigned, just stop and patrol in place
+                            brain->currentState = TacticalState::PATROL;
                         }
                         break;
                     }
@@ -216,13 +256,11 @@ public:
                 // If JSON failed to load cruise altitude, force it to 10,000m
                 float targetAlt = aero->cruiseAltitudeMeters < 100.0f ? 10000.0f : aero->cruiseAltitudeMeters;
 
-                // Terminal Dive Logic
                 if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
                     float distToTarget = MathUtils::GetDistance(transform.pos, seeker->targetPos);
                     if (distToTarget < 5.0f) targetAlt = 10.0f;
                 }
 
-                // Execute the Climb/Dive (Vertical speed of ~500 m/s)
                 float verticalSpeed = 500.0f * deltaTime;
                 if (transform.altitude < targetAlt) {
                     transform.altitude += verticalSpeed;
@@ -232,14 +270,12 @@ public:
                     if (transform.altitude < targetAlt) transform.altitude = targetAlt;
                 }
 
-                // --- FUEL & MASS ---
                 if (aero->currentFuelKg > 0.0f) {
                     aero->currentFuelKg -= aero->burnRateKgSec * deltaTime;
                     if (aero->currentFuelKg < 0.0f) aero->currentFuelKg = 0.0f;
                     aero->inverseMass = 1.0f / (aero->dryMassKg + aero->currentFuelKg);
                 }
 
-                // Caching check: Only calculate expensive atmosphere math if altitude shifts significantly
                 if (std::abs(transform.altitude - aero->lastCachedAltitude) > 50.0f) {
                     aero->cachedAirDensity = Physics::GetAirDensity(transform.altitude);
                     aero->cachedSpeedOfSound = Physics::GetSpeedOfSound(transform.altitude);
@@ -249,25 +285,20 @@ public:
                 float speedMps = kin.currentSpeedKnots * MPS_PER_KNOT;
                 float machNumber = speedMps / aero ->cachedSpeedOfSound;
 
-                // Determine drag coefficient based on Mach regime
                 float dragCoeff = DRAG_COEFF_SUBSONIC;
                 if (machNumber > 0.8f && machNumber < 1.2f) dragCoeff = DRAG_COEFF_TRANSONIC;
                 else if (machNumber >= 1.2f) dragCoeff = DRAG_COEFF_SUPERSONIC;
 
-                // Standard fluid drag equation
                 float dragForce = 0.5f * aero->cachedAirDensity * (speedMps * speedMps) * dragCoeff * aero->areaM2;
 
-                // Apply engine thrust if accelerating
                 if (kin.currentSpeedKnots < kin.desiredSpeedKnots) {
                     float accelMps = (aero->currentFuelKg > 0.0f) ? (aero->thrustNewtons * aero->inverseMass) : 0.0f;
                     kin.currentSpeedKnots += (accelMps * KNOTS_PER_MPS) * deltaTime;
                 }
 
-                // Apply aerodynamic deceleration
                 float decelMps = dragForce * aero->inverseMass;
                 kin.currentSpeedKnots -= (decelMps * KNOTS_PER_MPS) * deltaTime;
 
-                // Stall Check (Only stalls if out of fuel AND below 200 knots)
                 bool isStalled = (aero->currentFuelKg <= 0.0f && kin.currentSpeedKnots < 200.0f);
                 if (transform.altitude < 0.0f || isStalled) {
                     kin.isDead = true;
@@ -286,7 +317,6 @@ public:
                 }
             }
 
-            // --- UNIVERSAL KINEMATIC RESOLUTION ---
             if (kin.currentSpeedKnots < 0.0f) kin.currentSpeedKnots = 0.0f;
 
             if (kin.currentSpeedKnots > 0.01f) {
@@ -300,7 +330,6 @@ public:
             transform.pos = MathUtils::Add(transform.pos, MathUtils::Scale(kin.velocity, deltaTime));
         });
 
-        // Sinlge-threaded Sweep (Structural Changes)
         for (auto entity : view) {
             if (registry.get<Kinematics>(entity).isDead) {
                 registry.emplace_or_replace<DeadTag>(entity);
@@ -317,22 +346,18 @@ public:
         auto targets = registry.view<Transform2D, RadarSignature, IFF>();
 
         for (auto& [obsId, trackList] : detectionData.activeTracks) {
-            for (auto it = trackList.begin(); it != trackList.end(); ) {
-                it->ageSec += deltaTime;
-
-                if (it->ageSec > 5.0f) {
-                    it = trackList.erase(it);
-                } else {
-                    ++it;
-                }
+            for (auto& track : trackList) {
+                track.ageSec += deltaTime;
             }
+            std::erase_if(trackList, [](const RadarTrack& t) {
+                return t.ageSec > TRACK_STALE_TIMEOUT_SEC;
+            });
         }
 
         for (auto observer : observers) {
             auto& obsTransform = observers.get<Transform2D>(observer);
             auto& obsRadar = observers.get<RadarEmitter>(observer);
             auto& obsIFF = observers.get<IFF>(observer);
-
             uint32_t obsId = static_cast<uint32_t> (observer);
 
             obsRadar.timeSinceLastScan += deltaTime;
@@ -340,7 +365,6 @@ public:
             if (obsRadar.timeSinceLastScan >= obsRadar.scanRateSec) {
                 float timeDelta = obsRadar.timeSinceLastScan;
                 obsRadar.timeSinceLastScan = 0.0f;
-
                 std::vector<MathUtils::Vec2> newPings;
 
                 for (auto target : targets) {
@@ -364,15 +388,14 @@ public:
                     if (detected) newPings.push_back(tgtTransform.pos);
                 }
 
-                auto& myTracks = detectionData.activeTracks[obsId];
+                auto& myTracks = detectionData.activeTracks[observer];
                 std::vector<RadarTrack> newlyDiscoveredTracks;
 
                 for (const auto& pingPos : newPings) {
                     bool matched = false;
-                    float closestDistSq = 4.0f; // 2.0 NM Correlation Gate (2 Squared)
+                    float closestDistSq = 4.0f;
                     int bestMatchIndex = -1;
 
-                    // Did we see this blip on the last sweep?
                     for (size_t i = 0; i < myTracks.size(); ++i) {
                         float dSq = MathUtils::LengthSq(MathUtils::Sub(pingPos, myTracks[i].pos));
                         if (dSq < closestDistSq) {
@@ -411,35 +434,48 @@ public:
 
             if (mag.fireCooldown > 0.0f) mag.fireCooldown -= deltaTime;
 
-            if (brain.currentState == TacticalState::STANDOFF || brain.currentState == TacticalState::DEFEND){
-                if (mag.fireCooldown <= 0.0f) {
+            if (brain.currentState == TacticalState::STANDOFF ||
+                brain.currentState == TacticalState::DEFEND ||
+                brain.currentState == TacticalState::INTERCEPT){
 
+                if (mag.fireCooldown <= 0.0f) {
                     auto& detectionData = registry.ctx().get<RadarDetectionData>();
                     uint32_t myId = static_cast<uint32_t>(entity);
 
-                    if (detectionData.activeTracks.find(myId) == detectionData.activeTracks.end() ||
-                        detectionData.activeTracks[myId].empty()) {
+                    if (detectionData.activeTracks.find(entity) == detectionData.activeTracks.end() ||
+                        detectionData.activeTracks[entity].empty()) {
                         continue;
                     }
 
-                    MathUtils::Vec2 initialTargetPos = detectionData.activeTracks[myId][0].pos;
-                    MathUtils::Vec2 initialTargetVel = detectionData.activeTracks[myId][0].vel;
-                    float distToTarget = MathUtils::GetDistance(transform.pos, initialTargetPos);
+                    auto& tracks = detectionData.activeTracks[entity];
+                    const RadarTrack* bestTarget = nullptr;
+                    float closestDistSq = std::numeric_limits<float>::max();
+
+                    for (const auto& track : tracks) {
+                        float dSq = MathUtils::LengthSq(MathUtils::Sub(transform.pos, track.pos));
+                        if (dSq < closestDistSq) {
+                            closestDistSq = dSq;
+                            bestTarget = &track;
+                        }
+                    }
+
+                    if (!bestTarget) continue;
+
+                    MathUtils::Vec2 initialTargetPos = bestTarget->pos;
+                    MathUtils::Vec2 initialTargetVel = bestTarget->vel;
+                    float distToTarget = std::sqrt(closestDistSq);
 
                     for (auto& [weaponId, ammoCount] : mag.currentAmmo) {
                         if (ammoCount > 0) {
                             const MissileStats& mStats = TacticalDatabase::GetMissile(weaponId);
 
-                            // Ensure weapon range is valid and target is in range
                             float mRange = mStats.maxRangeNM > 1.0f ? mStats.maxRangeNM : 150.0f;
-                            if (distToTarget > mRange) continue;
+                            if (distToTarget > mRange) continue; // Out of range
 
                             ammoCount -= 1;
                             mag.fireCooldown = 3.0f;
 
                             auto missile = registry.create();
-
-                            // If JSON failed to load speed, default to Mach 3
                             float missileSpeed = mStats.maxSpeedKnots > 10.0f ? mStats.maxSpeedKnots : 2000.0f;
 
                             registry.emplace<SeekerHead>(missile,
@@ -460,7 +496,7 @@ public:
                                 kin.velocity,                                // Inherit ship's momentum as it leaves the tube
                                 kin.headingVector,                           // Launch facing the same direction as the ship
                                 missileSpeed,                           // Max Speed (Knots)
-                                kin.currentSpeedKnots,                       // Current speed in knots (Starts cold off the rail)
+                                600.0f,                                 // Apply Immediate 600 Knot Booster Kick
                                 missileSpeed,                           // Desired speed in knots (Push the throttle to 100%)
                                 // TODO: Change from hardcoded 50 acceleration rate to using realistic missile rates
                                 50.0f);                                         // Massive acceleration rate (knots per second)
@@ -487,9 +523,6 @@ public:
                                 );
 
                             registry.emplace<IFF>(missile,iff.isHostile);
-
-                            std::cout << "[COMBAT] Fired " << weaponId << "! (" << ammoCount << " left)" <<
-                                transform.pos.x << transform.pos.y << std::endl;
                             break; // Break to make sure we only fire ONE missile this frame
                         }
                     }
@@ -522,11 +555,8 @@ public:
                     auto& hull = targets.get<Hull>(target);
                     hull.currentHP -= warhead.yieldDamage;
 
-                    std::cout << "[COMBAT] Impact ! Target took " << warhead.yieldDamage << " damage. HP remaining: " << hull.currentHP << std::endl;
-
                     if (hull.currentHP <= 0.0f) {
                         registry.emplace_or_replace<DeadTag>(target);
-                        std::cout << "[COMBAT] Target Destroyed!" << std::endl;
                     }
 
                     registry.emplace_or_replace<DeadTag>(missile);
