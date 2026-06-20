@@ -8,6 +8,11 @@ class MapRenderer {
 public:
     bool showElevation = false;
 
+    // Prevent accidental copies that would double-free GPU textures
+    MapRenderer() = default;
+    MapRenderer(const MapRenderer&) = delete;
+    MapRenderer& operator=(const MapRenderer&) = delete;
+
     // Pass the ScenarioData into the load and draw functions
     void LoadAssets(const ScenarioData& scenario);
     void UnloadAssets();

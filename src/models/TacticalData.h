@@ -1,11 +1,20 @@
 #pragma once
 #include <string>
 #include <unordered_map>
+#include "../external/entt.hpp"
 
 enum class SeekerType {
     ACTIVE_RADAR,
     SEMI_ACTIVE,
     PASSIVE_IR
+};
+
+enum class AircraftMission {
+    CAP,        // Combat Air Patrol - defend the group
+    STRIKE,     // Attack surface targets
+    SEAD,       // Suppress enemy air defenses
+    RETURNING,  // Bingo fuel, heading home
+    ON_DECK     // Not airborne
 };
 
 // --- TACTICAL STRUCTS ---
@@ -40,6 +49,22 @@ struct ShipStats {
     float rcs;
     float rcsFourthRoot;
     std::unordered_map<std::string, int> loadout; // <Weapon_ID, Count>
+};
+
+struct FlightDeck {
+    int maxAircraft = 75;
+    std::vector<entt::entity> aircraftOnDeck;
+    std::vector<entt::entity> aircraftAirborne;
+    float launchCooldownSec = 0.0f;
+    float recoveryWindowSec = 0.0f;
+};
+
+struct Aircraft {
+    float fuelKg = 0.0f;
+    float fuelBurnRateKgSec = 0.0f;
+    float bingoFuelKg = 0.0f;   // Minimum fuel to return to carrier
+    entt::entity assignedCarrier { entt::null };
+    AircraftMission currentMission = AircraftMission::CAP;
 };
 
 // --- MASTER DATABASE ---

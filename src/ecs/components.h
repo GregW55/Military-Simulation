@@ -17,6 +17,14 @@ enum class GuidancePhase {
     INERTIAL_BLIND
 };
 
+enum class ThreatClass {
+    UNKNOWN,
+    SURFACE_SHIP,       // Slow, large RCS, at sea level
+    AIRCRAFT,           // Fast, airborne, medium RCS
+    MISSILE_INBOUND,    // Very fast, tiny RCS, closing rapidly, low altitude
+    FRIENDLY            // IFF confirmed friendly(future)
+};
+
 struct DeadTag {};
 
 // Where is it in the world?
@@ -89,9 +97,38 @@ struct RadarSignature {
 struct RadarTrack {
     MathUtils::Vec2 pos;
     MathUtils::Vec2 vel;
+    float altitude = 0.0f;
     float ageSec = 0.0f;
+    float speedKnots       = 0.0f;   // Derived from vel magnitude each update
+    float closingSpeedKnots = 0.0f;  // Positive = closing on observer, negative = opening
+    float timeToImpactSec  = -1.0f;  // -1 means not on intercept course
+    ThreatClass classification = ThreatClass::UNKNOWN;
+    float threatScore      = 0.0f;   // Higher = more urgent
 };
 
+struct SharedThreatPicture {
+    std::unordered_map<uint32_t, entt::entity> engagementsAssignments;
+
+    // Simple position hash for correlation (1 NM resolution)
+    static uint32_t HashPos(MathUtils::Vec2 pos) {
+        int ix = static_cast<int>(pos.x);
+        int iy = static_cast<int>(pos.y);
+        return static_cast<uint32_t>((ix * 73856093) ^ (iy * 19349663));
+    }
+
+    bool IsAssigned(MathUtils::Vec2 threatPos) const {
+        uint32_t key = HashPos(threatPos);
+        auto it = engagementsAssignments.find(key);
+        if (it == engagementsAssignments.end()) return false;
+        return true;
+    }
+
+    void Assign(MathUtils::Vec2 threatPos, entt::entity shooter) {
+        engagementsAssignments[HashPos(threatPos)] = shooter;
+    }
+
+    void Clear() { engagementsAssignments.clear(); }
+};
 // Struct to hold successful radar pings
 struct RadarDetectionData {
     // Map of [Observer ID] -> [List of Target Coordinates]
@@ -105,6 +142,8 @@ struct SeekerHead {
     GuidancePhase phase { GuidancePhase::MIDCOURSE_DATALINK };
     MathUtils::Vec2 targetPos = { 0.0f, 0.0f };
     MathUtils::Vec2 targetVel = {0.0f, 0.0f};
+    float targetAltitude = 0.0f;
+    bool isInterceptor = false; // Determines terminal-phase altitude behavior
 };
 
 // What weapons are currently loaded, and can we fire
@@ -123,3 +162,16 @@ struct AutonomousGuidance {
     bool hasTarget = false;
 };
 
+struct ActiveEngagement {
+    MathUtils::Vec2 targetPos;       // Where we were aiming when we fired
+    MathUtils::Vec2 targetVel;       // Estimated velocity at time of firing
+    entt::entity missileEntity;      // The specific missile we fired
+    ThreatClass targetClass;         // What we thought it was
+    float timeFiredSec = 0.0f;       // Simulation time when fired
+    bool missileAlive = true;        // Track if our shot is still flying
+};
+
+struct EngagementLog {
+    std::vector<ActiveEngagement> current;
+    int totalMissilesFired = 0;      // For Doctrine decisions (ammo awareness)
+};

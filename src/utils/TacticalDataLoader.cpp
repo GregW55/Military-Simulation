@@ -20,6 +20,15 @@ void TacticalDataLoader::Load(const std::string &filepath) {
         std::cerr << "CRITICAL ERROR: units.json is malformed: " << e.what() << std::endl;
         return;
     }
+    // Guard against missing top-level sections
+    if (!j.contains("missiles")) {
+        std::cerr << "CRITICAL ERROR: units.json has no 'missiles' section." << std::endl;
+        return;
+    }
+    if (!j.contains("ships")) {
+        std::cerr << "CRITICAL ERROR: units.json has no 'ships' section." << std::endl;
+        return;
+    }
 
     auto LoadFloat = [](const json& j, const std::string& key, float defaultVal, const std::string& unitName) {
         if (!j.contains(key)) {
@@ -36,7 +45,7 @@ void TacticalDataLoader::Load(const std::string &filepath) {
         MissileStats m;
         m.name = val.value("name", "MISSING_NAME");
         m.maxRangeNM = LoadFloat(val, "range_nm", 0.0f, key);
-        m.maxSpeedKnots = LoadFloat(val, "speed_kts", 0.0f, key);
+        m.maxSpeedKnots = LoadFloat(val, "max_speed_kts", 0.0f, key);
 
         std::string seekerStr = val.value("seeker_type", "PASSIVE");
         if (seekerStr == "ACTIVE") {

@@ -20,7 +20,8 @@ bool AegisEngine::Initialize() {
 
     TacticalDataLoader::Load("../data/units.json");
 
-    currentScenario = ScenarioParser::Load("../scenarios/taiwan_strait.json");
+    // currentScenario = ScenarioParser::Load("../scenarios/taiwan_strait.json");
+    currentScenario = ScenarioParser::Load("../scenarios/test_1v1.json");
     if (currentScenario.scenarioName.empty()) {
         return false;
     }
@@ -28,6 +29,7 @@ bool AegisEngine::Initialize() {
     registry.ctx().emplace<MapProjection>();
     registry.ctx().emplace<MapRenderer>();
     registry.ctx().emplace<RadarDetectionData>();
+    registry.ctx().emplace<SharedThreatPicture>();
 
     registry.ctx().get<MapProjection>().LoadheightMap(currentScenario.heightMap.filepath);
     registry.ctx().get<MapRenderer>().LoadAssets(currentScenario);
@@ -39,6 +41,7 @@ bool AegisEngine::Initialize() {
 
 void AegisEngine::SpawnScenarioUnits() {
     auto& map = registry.ctx().get<MapProjection>();
+    std::mt19937 rng{std::random_device{}()};
 
     for (const auto& group : currentScenario.groups) {
         if (group.formation == "grid") {
@@ -72,7 +75,6 @@ void AegisEngine::SpawnScenarioUnits() {
                 float startY = centerNM.y + (row * group.spacingNM);
 
                 auto entity = registry.create();
-                std::mt19937 rng{std::random_device{}()};
                 std::uniform_real_distribution<float> dist(0.0f, stats.radarScanRateSec);
                 float randomStartTimer = dist(rng);
 
@@ -121,6 +123,7 @@ void AegisEngine::SpawnScenarioUnits() {
                 registry.emplace<IFF>(entity,
                     group.isHostile                              // Friendly / Hostile
                 );
+                registry.emplace<EngagementLog>(entity);
                 registry.emplace<Hull>(entity, 100.0f);
             }
         }
@@ -223,8 +226,7 @@ void AegisEngine::Render() {
     }
 
     auto& detectionData = registry.ctx().get<RadarDetectionData>();
-    for (const auto& [observerId, targetList] : detectionData.activeTracks) {
-        auto observerEntity = static_cast<entt::entity>(observerId);
+    for (const auto& [observerEntity, targetList] : detectionData.activeTracks) {
 
         if (registry.valid(observerEntity)) {
             auto& obsTransform = registry.get<Transform2D>(observerEntity);

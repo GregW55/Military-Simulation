@@ -8,6 +8,10 @@ public:
     MapProjection() = default;
     ~MapProjection();
 
+    // Prevent accidental copies that would double-free heightPixelsRaw
+    MapProjection(const MapProjection&) = delete;
+    MapProjection& operator=(const MapProjection&) = delete;
+
     MathUtils::Vec2 GeoToPixel(float lat, float lon);
     MathUtils::Vec2 GeoToNM(float lat, float lon);
     MathUtils::Vec2 PixelToGeo(MathUtils::Vec2 pixel);
