@@ -6,7 +6,7 @@
 class AegisEngine {
 public:
     // The three public lifecycle methods
-    bool Initialize();
+    bool Initialize(bool headless, int seed);
     void Run();
     void Shutdown();
 
@@ -20,6 +20,8 @@ private:
     void SpawnScenarioUnits();
 
     // The core state of the simulation
+    bool isHeadless = false;
+    int currentSeed = 0;
     entt::registry registry;
     Camera2D camera = { 0 };
     ScenarioData currentScenario;

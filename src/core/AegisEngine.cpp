@@ -1,5 +1,4 @@
 #include "AegisEngine.h"
-#include <iostream>
 #include <random>
 
 #include "GeoEngine.h"
@@ -11,12 +10,9 @@
 #include "../utils/ScenarioParser.h"
 #include "../utils/MathUtils.h"
 
-bool AegisEngine::Initialize() {
-    InitWindow(1920, 1080, "AEGIS - TAIWAN THEATER");
-    SetTargetFPS(60);
-
-    camera.zoom = 1.0f;
-    camera.offset = {1920.0f / 2, 1080.0f / 2};
+bool AegisEngine::Initialize(const bool headless, int seed) {
+    isHeadless = headless;
+    currentSeed = seed;
 
     TacticalDataLoader::Load("../data/units.json");
 
@@ -26,13 +22,25 @@ bool AegisEngine::Initialize() {
         return false;
     }
 
+    registry.ctx().emplace<std::mt19937>(seed); // Seed Randomization
+    registry.ctx().emplace<float>(0.0f);           // Sim Time In Seconds
+
     registry.ctx().emplace<MapProjection>();
     registry.ctx().emplace<MapRenderer>();
     registry.ctx().emplace<RadarDetectionData>();
     registry.ctx().emplace<SharedThreatPicture>();
 
     registry.ctx().get<MapProjection>().LoadheightMap(currentScenario.heightMap.filepath);
-    registry.ctx().get<MapRenderer>().LoadAssets(currentScenario);
+
+    if (!headless) {
+        InitWindow(1920, 1080, "AEGIS - TAIWAN THEATER");
+        SetTargetFPS(60);
+
+        camera.zoom = 1.0f;
+        camera.offset = {1920.0f / 2, 1080.0f / 2};
+
+        registry.ctx().get<MapRenderer>().LoadAssets(currentScenario);
+    }
 
     SpawnScenarioUnits();
 
@@ -41,14 +49,14 @@ bool AegisEngine::Initialize() {
 
 void AegisEngine::SpawnScenarioUnits() {
     auto& map = registry.ctx().get<MapProjection>();
-    std::mt19937 rng{std::random_device{}()};
+    auto& rng = registry.ctx().get<std::mt19937>();
 
     for (const auto& group : currentScenario.groups) {
         if (group.formation == "grid") {
             const ShipStats& stats = TacticalDatabase::GetShip(group.unitType);
 
             float maxWeaponRangeNM = 0.0f;
-            for (const auto& [weaponId, count] : stats.loadout) {
+            for (const auto &weaponId: stats.loadout | std::views::keys) {
                 const MissileStats& mStats = TacticalDatabase::GetMissile(weaponId);
                 if (mStats.maxRangeNM > maxWeaponRangeNM) {
                     maxWeaponRangeNM = mStats.maxRangeNM;
@@ -88,7 +96,6 @@ void AegisEngine::SpawnScenarioUnits() {
                 std::uniform_real_distribution<float> dist(0.0f, stats.radarScanRateSec);
                 float randomStartTimer = dist(rng);
 
-                float mastHeight = stats.radarMastHeight > 1.0f ? stats.radarMastHeight : 30.0f;
                 float maxSpeed = stats.maxSpeedKnots > 1.0f ? stats.maxSpeedKnots : 30.0f;
 
                 registry.emplace<Transform2D>(entity,
@@ -208,8 +215,7 @@ void AegisEngine::Render() {
                 DrawText(tooltip, screenPos.x + 10, screenPos.y - 20, 20, GREEN);
             }
 
-            auto* radar = registry.try_get<RadarEmitter>(entity);
-            if (radar) {
+            if (auto* radar = registry.try_get<RadarEmitter>(entity)) {
                 float radarRadiusPx = MathUtils::NmToPixels(radar->rangeNM);
                 if (showRadarRings || isHovered) {
                     DrawCircleLines(screenPos.x, screenPos.y, radarRadiusPx, Fade(c, 0.5f));
@@ -267,11 +273,21 @@ void AegisEngine::Render() {
 }
 
 void AegisEngine::Run() {
-    while (!WindowShouldClose()) {
-        ProcessInput();
-        float dt = GetFrameTime() * timeScale;
-        Update(dt);
-        Render();
+    auto& simTime = registry.ctx().get<float>();
+    if (isHeadless) {
+        while (simTime < 7200.0f) {
+            constexpr float fixedDelta = 1.0f;
+            Update(fixedDelta);
+            simTime += fixedDelta;
+        }
+    } else {
+        while (!WindowShouldClose()) {
+            ProcessInput();
+            float dt = GetFrameTime() * timeScale;
+            simTime += dt;
+            Update(dt);
+            Render();
+        }
     }
 }
 
