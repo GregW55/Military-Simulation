@@ -112,7 +112,7 @@
       "unit_type": "TYPE_055",
       "count": 1,
       "center_lat": 24.50,
-      "center_lon": 120.05,
+      "center_lon": 119.25,
       "formation": "grid",
       "spacing_nm": 0.5,
       "is_hostile": true,

@@ -55,8 +55,18 @@ void AegisEngine::SpawnScenarioUnits() {
                 }
             }
 
-            float optimalStandoff = maxWeaponRangeNM * 0.95f;
-            if (optimalStandoff < 10.0f) optimalStandoff = 50.0f;
+            float mastHeight = stats.radarMastHeight > 1.0f ? stats.radarMastHeight : 30.0f;
+
+            float weaponLimitedStandoff = maxWeaponRangeNM * 0.95f;
+
+            float ownHorizonNM = MathUtils::GetRadarHorizonNM(mastHeight);
+            float assumedEnemyHorizonNM = MathUtils::GetRadarHorizonNM(mastHeight);
+            float maxAchievableRangeNM = std::min(stats.radarRangeNM, ownHorizonNM + assumedEnemyHorizonNM);
+
+            float radarLimitedStandoff = maxAchievableRangeNM * 0.90f;
+
+            float optimalStandoff = std::min(weaponLimitedStandoff, radarLimitedStandoff);
+            if (optimalStandoff < 10.0f) optimalStandoff = 10.0f;
 
             MathUtils::Vec2 centerNM = map.GeoToNM(group.centerLat, group.centerLon);
 

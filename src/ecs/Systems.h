@@ -7,6 +7,8 @@
 
 #include "../utils/ThreatAnalysis.h"
 
+constexpr bool VERBOSE_COMBAT_LOG = true;
+
 class Systems {
 public:
     // --- NAVIGATION SYSTEM (The Captain) ---
@@ -58,6 +60,10 @@ public:
                         registry.emplace_or_replace<RadarEmitter>(entity,
                             seeker->rangeNM, seeker->rangeNM * seeker->rangeNM, 0.25f, 0.0f
                         );
+                        if (VERBOSE_COMBAT_LOG) {
+                            std::cout << "[SEEKER] Missile " << (uint32_t)entity << " going active, dist to intercept: "
+                                      << distToIntercept << "nm\n";
+                        }
                     }
                 }
                 else if (seeker->phase == GuidancePhase::TERMINAL_PITBULL) {
@@ -103,6 +109,10 @@ public:
                 auto* myIFF = registry.try_get<IFF>(entity);
                 if (!myIFF) continue;
 
+                auto* myRadar = registry.try_get<RadarEmitter>(entity);
+                if (!myRadar) continue;
+                float detectionRangeSq = myRadar->rangeNmSq;
+
                 // Only re-scan for targets every 2 seconds, not every frame
                 brain->targetingCooldown -= deltaTime;
 
@@ -110,20 +120,15 @@ public:
                     brain->targetingCooldown = 2.0f;  // Recalculate every 2 seconds
                     brain->hasTarget = false;
 
+                    auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[entity];
                     float closestDistSq = std::numeric_limits<float>::max();
-                    auto allShips = registry.view<Transform2D, IFF, Hull>();
 
-                    for (auto other : allShips) {
-                        if (entity == other) continue;
-                        auto& otherIFF = registry.get<IFF>(other);
-                        if (myIFF->isHostile != otherIFF.isHostile) {
-                            auto& otherTrans = registry.get<Transform2D>(other);
-                            float distSq = MathUtils::LengthSq(MathUtils::Sub(trans.pos, otherTrans.pos));
-                            if (distSq < closestDistSq) {
-                                closestDistSq = distSq;
-                                brain->cachedTargetPos = otherTrans.pos;
-                                brain->hasTarget = true;
-                            }
+                    for (auto& track : myTracks) {
+                        float distSq = MathUtils::LengthSq(MathUtils::Sub(trans.pos, track.pos));
+                        if (distSq < closestDistSq) {
+                            closestDistSq = distSq;
+                            brain->cachedTargetPos = track.pos;
+                            brain->hasTarget = true;
                         }
                     }
                 }
@@ -134,12 +139,15 @@ public:
                 bool foundTarget = brain->hasTarget;
 
                 // --- Combat Interrupt ---
-                auto* myRadar = registry.try_get<RadarEmitter>(entity);
                 float detectionRange = myRadar ? myRadar->rangeNM : 50.0f;
 
                 if (foundTarget && closestDist < detectionRange) {
                     if (brain->currentState == TacticalState::PATROL || brain->currentState == TacticalState::TRANSIT) {
                         brain->currentState = TacticalState::INTERCEPT;
+                        if (VERBOSE_COMBAT_LOG) {
+                            std::cout << "[STATE] Entity " << (uint32_t)entity << " PATROL -> INTERCEPT (range: "
+                                      << closestDist << "nm)\n";
+                        }
                     }
                 }
 
@@ -171,6 +179,10 @@ public:
                             } else {
                                 brain->currentState = TacticalState::STANDOFF;
                                 kin.desiredSpeedKnots = 0.0f;
+                                if (VERBOSE_COMBAT_LOG) {
+                                    std::cout << "[STATE] Entity " << (uint32_t)entity << " INTERCEPT -> STANDOFF (range: "
+                                              << closestDist << "nm, standoff target: " << brain->desiredStandoffNM << "nm)\n";
+                                }
                             }
                         } else {
                             brain->currentState = TacticalState::PATROL;
@@ -522,7 +534,7 @@ public:
             // --- Evaluate each threat and decide ---
             for (RadarTrack* threat : sortedThreats) {
                 // DOCTRINE RULE 1: Don't engage targets moving away
-                if (threat->closingSpeedKnots <= 0.0f &&
+                if (threat->closingSpeedKnots <= RETREAT_THRESHOLD_KTS &&
                     threat->classification != ThreatClass::MISSILE_INBOUND) continue;
 
                 // DOCTRINE RULE 2: Select the right weapon for this target
@@ -580,6 +592,11 @@ public:
 
                     auto missileEntity = LaunchMissile(registry, entity, transform,
                         registry.get<Kinematics>(entity), iff, *threat, mStats, selectedWeapon);
+                    if (VERBOSE_COMBAT_LOG) {
+                        std::cout << "[FIRE] Entity " << (uint32_t)entity << " launched " << selectedWeapon
+                                  << " at threat (class=" << (int)threat->classification
+                                  << ", dist=" << distToTarget << "nm, TTI=" << threat->timeToImpactSec << "s)\n";
+                    }
 
                     log.current.push_back({
                         threat->pos,
@@ -626,8 +643,16 @@ public:
                     auto& hull = targets.get<Hull>(target);
                     hull.currentHP -= warhead.yieldDamage;
 
+                    if (VERBOSE_COMBAT_LOG) {
+                        std::cout << "[IMPACT] Missile hit entity " << (uint32_t)target
+                                  << " for " << warhead.yieldDamage << " dmg, HP now " << hull.currentHP << "\n";
+                    }
+
                     if (hull.currentHP <= 0.0f) {
                         registry.emplace_or_replace<DeadTag>(target);
+                        if (VERBOSE_COMBAT_LOG) {
+                            std::cout << "[KILL] Entity " << (uint32_t)target << " destroyed\n";
+                        }
                     }
 
                     registry.emplace_or_replace<DeadTag>(missile);

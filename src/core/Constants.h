@@ -42,6 +42,9 @@ constexpr float WAYPOINT_REACHED_DISTANCE_PX = 20.0f;
 constexpr float FUSE_DISTANCE_INTERCEPTOR_PX = 5.0f;
 constexpr float FUSE_DISTANCE_ANTISHIP_PX = 10.0f;
 
+// Combat Doctrine
+constexpr float RETREAT_THRESHOLD_KTS = -2.0f;
+
 // Physics
 // Standard atmospheric refraction constant for Radar Horizon in Nautical Miles
 // accounts for radar waves bending slightly with Earth's curvature.
