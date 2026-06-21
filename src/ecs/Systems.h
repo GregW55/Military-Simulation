@@ -621,16 +621,18 @@ public:
 
     static void ProximityFuseSystem(entt::registry& registry) {
         auto missiles = registry.view<Transform2D, Warhead, IFF>();
-        auto targets = registry.view<Transform2D, Hull, IFF>();
+        auto shipTargets = registry.view<Transform2D, Hull, IFF>();
 
         for (auto missile : missiles) {
+            if (registry.all_of<DeadTag>(missile)) continue;
+
             auto& mTrans = missiles.get<Transform2D>(missile);
             auto& warhead = missiles.get<Warhead>(missile);
             auto& mIFF = missiles.get<IFF>(missile);
 
-            for (auto target: targets) {
-                auto& tTrans = targets.get<Transform2D>(target);
-                auto& tIFF = targets.get<IFF>(target);
+            for (auto target: shipTargets) {
+                auto& tTrans = shipTargets.get<Transform2D>(target);
+                auto& tIFF = shipTargets.get<IFF>(target);
 
                 if (mIFF.isHostile == tIFF.isHostile) continue;
 
@@ -640,7 +642,7 @@ public:
 
                 // DETONATION
                 if (distNmSq <= warhead.lethalRadiusNmSq) {
-                    auto& hull = targets.get<Hull>(target);
+                    auto& hull = shipTargets.get<Hull>(target);
                     hull.currentHP -= warhead.yieldDamage;
 
                     if (VERBOSE_COMBAT_LOG) {
@@ -657,6 +659,29 @@ public:
 
                     registry.emplace_or_replace<DeadTag>(missile);
                     break;
+                }
+                if (registry.all_of<DeadTag>(missile)) continue;
+
+                for (auto otherMissile : missiles) {
+                    if (otherMissile == missile) continue;
+                    if (registry.all_of<DeadTag>(otherMissile)) continue;
+
+                    auto& oIFF = missiles.get<IFF>(otherMissile);
+                    if (mIFF.isHostile == oIFF.isHostile) continue;
+
+                    auto& oTrans = missiles.get<Transform2D>(otherMissile);
+                    float distNmSq = MathUtils::LengthSq(MathUtils::Sub(mTrans.pos, oTrans.pos));
+                    constexpr float INTERCEPT_KILL_RADIUS_NM = 0.05f; // ~300ft
+                    if (distNmSq <= INTERCEPT_KILL_RADIUS_NM * INTERCEPT_KILL_RADIUS_NM) {
+                        registry.emplace_or_replace<DeadTag>(missile);
+                        registry.emplace_or_replace<DeadTag>(otherMissile);
+                        if (VERBOSE_COMBAT_LOG) {
+                            std::cout << "[INTERCEPT] Missile " << (uint32_t)missile
+                                      << " destroyed missile " << (uint32_t)otherMissile << "\n";
+                        }
+                        break;
+                    }
+
                 }
             }
         }
