@@ -9,6 +9,7 @@
 #include "../utils/TacticalDataLoader.h"
 #include "../utils/ScenarioParser.h"
 #include "../utils/MathUtils.h"
+#include "../utils/MetricsLogger.h"
 
 bool AegisEngine::Initialize(const bool headless, int seed) {
     isHeadless = headless;
@@ -43,6 +44,7 @@ bool AegisEngine::Initialize(const bool headless, int seed) {
     }
 
     SpawnScenarioUnits();
+    MetricsLogger::Initialize("metrics.csv", seed);
 
     return true;
 }
@@ -274,11 +276,30 @@ void AegisEngine::Render() {
 
 void AegisEngine::Run() {
     auto& simTime = registry.ctx().get<float>();
+
     if (isHeadless) {
         while (simTime < 7200.0f) {
             constexpr float fixedDelta = 1.0f;
             Update(fixedDelta);
             simTime += fixedDelta;
+
+            // --- EARLY EXIT LOGIC ---
+            int activeShips = 0;
+            int activeMissiles = 0;
+
+            for (auto entity : registry.view<Hull>()) {
+                if (!registry.all_of<DeadTag>(entity)) activeShips++;
+            }
+
+            for (auto entity : registry.view<Warhead>()) {
+                if (!registry.all_of<DeadTag>(entity)) activeMissiles++;
+            }
+
+            // If 1 or 0 ships are left, and no missiles are in the air, the battle is over
+            if (activeShips <= 1 && activeMissiles == 0) {
+                std::cout << "Combat concluded early at " <<simTime << " seconds. \n";
+                break;
+            }
         }
     } else {
         while (!WindowShouldClose()) {
@@ -293,5 +314,6 @@ void AegisEngine::Run() {
 
 void AegisEngine::Shutdown() {
     registry.ctx().get<MapRenderer>().UnloadAssets();
+    MetricsLogger::Shutdown();
     CloseWindow();
 }

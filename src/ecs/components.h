@@ -69,6 +69,11 @@ struct Warhead {
     float yieldDamage = 0.0f;
     float lethalRadiusNM = 0.0f;
     float lethalRadiusNmSq = 0.0f;
+
+    // -- Logging & PK Variables ---
+    float baseReliability = 0.90f;          // Mechanical chance the missile doesn't just break
+    std::string weaponId = "";              // Remembering what type of missile it is
+    entt::entity shooter { entt::null }; // Remembering who fired it
 };
 
 struct Hull {
@@ -104,6 +109,7 @@ struct RadarTrack {
     float timeToImpactSec  = -1.0f;  // -1 means not on intercept course
     ThreatClass classification = ThreatClass::UNKNOWN;
     float threatScore      = 0.0f;   // Higher = more urgent
+    float consistentObservationSec = 0.0f;
 };
 
 struct SharedThreatPicture {
@@ -160,6 +166,8 @@ struct AutonomousGuidance {
     MathUtils::Vec2 cachedTargetPos = {0.0f, 0.0f};
     float targetingCooldown = 0.0f;
     bool hasTarget = false;
+    bool pendingEngagement = false;
+    float reactionTimer = 0.0f;
 };
 
 struct ActiveEngagement {

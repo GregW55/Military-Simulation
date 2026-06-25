@@ -2,16 +2,17 @@
 #include "Components.h"
 #include "../core/Constants.h"
 #include "../core/Physics.h"
+#include "../utils/ThreatAnalysis.h"
+#include "../utils/MetricsLogger.h"
 #include <iostream>
 #include <execution>
+#include <random>
 
-#include "../utils/ThreatAnalysis.h"
-
-constexpr bool VERBOSE_COMBAT_LOG = true;
+constexpr bool VERBOSE_COMBAT_LOG = false;
 
 class Systems {
 public:
-    // --- NAVIGATION SYSTEM (The Captain) ---
+    // --- NAVIGATION SYSTEM  ---
     static void NavigationSystem(entt::registry& registry, float deltaTime) {
         auto view = registry.view<Transform2D, Kinematics>();
 
@@ -111,13 +112,11 @@ public:
 
                 auto* myRadar = registry.try_get<RadarEmitter>(entity);
                 if (!myRadar) continue;
-                float detectionRangeSq = myRadar->rangeNmSq;
 
-                // Only re-scan for targets every 2 seconds, not every frame
                 brain->targetingCooldown -= deltaTime;
 
                 if (brain->targetingCooldown <= 0.0f) {
-                    brain->targetingCooldown = 2.0f;  // Recalculate every 2 seconds
+                    brain->targetingCooldown = 2.0f;
                     brain->hasTarget = false;
 
                     auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[entity];
@@ -133,25 +132,31 @@ public:
                     }
                 }
 
-                // Use the cached target instead of re-scanning
                 float closestDist = MathUtils::GetDistance(trans.pos, brain->cachedTargetPos);
                 MathUtils::Vec2 toTarget = MathUtils::Sub(brain->cachedTargetPos, trans.pos);
                 bool foundTarget = brain->hasTarget;
-
-                // --- Combat Interrupt ---
-                float detectionRange = myRadar ? myRadar->rangeNM : 50.0f;
+                float detectionRange = myRadar->rangeNM;
 
                 if (foundTarget && closestDist < detectionRange) {
                     if (brain->currentState == TacticalState::PATROL || brain->currentState == TacticalState::TRANSIT) {
-                        brain->currentState = TacticalState::INTERCEPT;
-                        if (VERBOSE_COMBAT_LOG) {
-                            std::cout << "[STATE] Entity " << (uint32_t)entity << " PATROL -> INTERCEPT (range: "
-                                      << closestDist << "nm)\n";
+                        if (!brain->pendingEngagement) {
+                            brain->pendingEngagement = true;
+                            std::uniform_real_distribution<float> delayDist(2.0f, 8.0f);
+                            brain->reactionTimer = delayDist(registry.ctx().get<std::mt19937>());
+                        }
+
+                        brain->reactionTimer -= deltaTime;
+                        if (brain->reactionTimer <= 0.0f) {
+                            brain->currentState = TacticalState::INTERCEPT;
+                            brain->pendingEngagement = false;
+                            if (VERBOSE_COMBAT_LOG) {
+                                std::cout << "[STATE] Entity " << (uint32_t)entity << " PATROL -> INTERCEPT (range: "
+                                          << closestDist << "nm)\n";
+                           }
                         }
                     }
                 }
 
-                // --- Tactical State Machine ---
                 switch (brain->currentState) {
                     case TacticalState::DEFEND: {
                         if (foundTarget) {
@@ -171,7 +176,7 @@ public:
                     }
                     case TacticalState::INTERCEPT: {
                         if (foundTarget) {
-                            if (closestDist > brain->desiredStandoffNM + 2.0f) {
+                            if (closestDist > brain->desiredStandoffNM + 1.0f) {
                                 if (closestDist > MATH_EPSILON) {
                                     kin.headingVector = MathUtils::Scale(toTarget, 1.0f / closestDist);
                                 }
@@ -191,14 +196,14 @@ public:
                     }
                     case TacticalState::STANDOFF: {
                         if (foundTarget) {
-                            if (closestDist > brain->desiredStandoffNM + 5.0f) {
+                            if (closestDist > brain->desiredStandoffNM + 1.0f) {
                                 kin.headingVector = MathUtils::Scale(toTarget, 1.0f / closestDist);
                                 kin.desiredSpeedKnots = kin.maxSpeedKnots;
-                            } else if (closestDist < brain->desiredStandoffNM - 5.0f) {
+                            } else if (closestDist < brain->desiredStandoffNM - 1.0f) {
                                 kin.headingVector = MathUtils::Scale(toTarget, -1.0f / closestDist);
                                 kin.desiredSpeedKnots = kin.maxSpeedKnots;
                             } else {
-                                kin.desiredSpeedKnots = 0.0f; // Perfect firing spot
+                                kin.desiredSpeedKnots = 0.0f;
                             }
                         } else {
                             brain->currentState = TacticalState::PATROL;
@@ -256,7 +261,7 @@ public:
         }
     }
 
-    // --- MOVEMENT SYSTEM (The Engine Room) ---
+    // --- MOVEMENT SYSTEM ---
     static void MovementSystem(entt::registry& registry, float deltaTime) {
         auto view = registry.view<Transform2D, Kinematics>();
 
@@ -269,7 +274,6 @@ public:
             // === ADVANCED FLIGHT PHYSICS ===
             // ===============================
             if (auto* aero = registry.try_get<Aerodynamics>(entity)) {
-                // If JSON failed to load cruise altitude, force it to 10,000m
                 float targetAlt = aero->cruiseAltitudeMeters < 100.0f ? 10000.0f : aero->cruiseAltitudeMeters;
 
                 if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
@@ -278,7 +282,6 @@ public:
                         if (seeker->isInterceptor) {
                             targetAlt = seeker->targetAltitude;
                         } else {
-                            // Anti-ship weapons sea-skim on terminal approach
                             targetAlt = 10.0f;
                         }
                     }
@@ -324,7 +327,14 @@ public:
 
                 bool isStalled = (aero->currentFuelKg <= 0.0f && kin.currentSpeedKnots < 200.0f);
                 if (transform.altitude < 0.0f || isStalled) {
-                    kin.isDead = true;
+                    if (!kin.isDead) {
+                        if (auto* warhead = registry.try_get<Warhead>(entity)) {
+                            float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+                            std::string reason = isStalled ? "OUT_OF_FUEL" : "HIT_WATER";
+                            MetricsLogger::Log(simTime, "CRASH", (uint32_t)warhead->shooter, 0, warhead->weaponId, 0.0f, reason);
+                        }
+                        kin.isDead = true;
+                    }
                 }
             }
             // ==============================
@@ -369,12 +379,8 @@ public:
         auto targets = registry.view<Transform2D, RadarSignature, IFF>();
 
         for (auto& [obsId, trackList] : detectionData.activeTracks) {
-            for (auto& track : trackList) {
-                track.ageSec += deltaTime;
-            }
-            std::erase_if(trackList, [](const RadarTrack& t) {
-                return t.ageSec > TRACK_STALE_TIMEOUT_SEC;
-            });
+            for (auto& track : trackList) track.ageSec += deltaTime;
+            std::erase_if(trackList, [](const RadarTrack& t) { return t.ageSec > TRACK_STALE_TIMEOUT_SEC; });
         }
 
         for (auto observer : observers) {
@@ -439,24 +445,26 @@ public:
                     myTracks[bestMatchIndex].vel = calculatedVel;
                     myTracks[bestMatchIndex].altitude = ping.altitude;
                     myTracks[bestMatchIndex].ageSec = 0.0f;
-
                     myTracks[bestMatchIndex].speedKnots = MathUtils::Length(calculatedVel) * 3600.0f;
+
                     MathUtils::Vec2 toObserver = MathUtils::Sub(obsTransform.pos, ping.pos);
                     float dist = MathUtils::Length(toObserver);
                     if (dist > 0.001f) {
                         MathUtils::Vec2 dir = MathUtils::Scale(toObserver, 1.0f / dist);
-                        myTracks[bestMatchIndex].closingSpeedKnots =
-                            MathUtils::Dot(calculatedVel, dir) * 3600.0f;
+                        myTracks[bestMatchIndex].closingSpeedKnots = MathUtils::Dot(calculatedVel, dir) * 3600.0f;
                     }
 
                     myTracks[bestMatchIndex].timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(
                         obsTransform.pos, ping.pos, calculatedVel);
 
-                    myTracks[bestMatchIndex].classification =
-                        ThreatAnalysis::Classify(myTracks[bestMatchIndex].speedKnots, ping.altitude);
-
-                    myTracks[bestMatchIndex].threatScore =
-                        ThreatAnalysis::ComputeThreatScore(myTracks[bestMatchIndex]);
+                    ThreatClass newClassification = ThreatAnalysis::Classify(myTracks[bestMatchIndex].speedKnots, ping.altitude);
+                    if (newClassification == myTracks[bestMatchIndex].classification) {
+                        myTracks[bestMatchIndex].consistentObservationSec += deltaTime;
+                    } else {
+                        myTracks[bestMatchIndex].consistentObservationSec = 0.0f;
+                    }
+                    myTracks[bestMatchIndex].classification = newClassification;
+                    myTracks[bestMatchIndex].threatScore = ThreatAnalysis::ComputeThreatScore(myTracks[bestMatchIndex]);
                     matched = true;
                 }
 
@@ -479,25 +487,19 @@ public:
         registry.ctx().get<SharedThreatPicture>().Clear();
         auto& detectionData = registry.ctx().get<RadarDetectionData>();
 
-        // Check if missiles we fired are still alive
         auto shipView = registry.view<EngagementLog>();
         for (auto entity : shipView) {
             auto& log = shipView.get<EngagementLog>(entity);
             for (auto& eng : log.current) {
                 if (eng.missileAlive) {
-                    // If the missile entity is gone, our shot ended
                     eng.missileAlive = registry.valid(eng.missileEntity);
                 }
             }
-            // Remove finished engagements
-            std::erase_if(log.current, [](const ActiveEngagement& e) {
-                return !e.missileAlive;
-            });
+            std::erase_if(log.current, [](const ActiveEngagement& e) { return !e.missileAlive; });
         }
 
         // --- Engagement decisions ---
         auto combatView = registry.view<Transform2D, IFF, Magazine, AutonomousGuidance, EngagementLog>();
-
         std::vector<RadarTrack*> sortedThreats;
         sortedThreats.reserve(16);
 
@@ -508,7 +510,6 @@ public:
             auto& brain = combatView.get<AutonomousGuidance>(entity);
             auto& log = combatView.get<EngagementLog>(entity);
 
-            // Only combat-ready states engage
             if (brain.currentState != TacticalState::STANDOFF &&
                 brain.currentState != TacticalState::DEFEND   &&
                 brain.currentState != TacticalState::INTERCEPT) continue;
@@ -522,10 +523,8 @@ public:
             if (tracks.empty()) continue;
 
             // --- Sort tracks by threat score (highest priority first) ---
-            sortedThreats.clear(); // Wipes contents, KEEPS the allocated capacity
-            for (auto& track : tracks) {
-                sortedThreats.push_back(&track);
-            }
+            sortedThreats.clear();
+            for (auto& track : tracks) sortedThreats.push_back(&track);
             std::sort(sortedThreats.begin(), sortedThreats.end(),
                 [](const RadarTrack* a, const RadarTrack* b) {
                     return a->threatScore > b->threatScore;
@@ -533,13 +532,12 @@ public:
 
             // --- Evaluate each threat and decide ---
             for (RadarTrack* threat : sortedThreats) {
-                // DOCTRINE RULE 1: Don't engage targets moving away
-                if (threat->closingSpeedKnots <= RETREAT_THRESHOLD_KTS &&
-                    threat->classification != ThreatClass::MISSILE_INBOUND) continue;
+                // Also add a distance check / threat check (cannot wait 2 seconds if a missile will hit us in 1)
+                if (threat->consistentObservationSec < 2.0f) continue; // Hard coded confirmation for now
 
                 // DOCTRINE RULE 2: Select the right weapon for this target
                 std::string selectedWeapon = SelectWeapon(mag, *threat);
-                if (selectedWeapon.empty()) continue; // No suitable weapon
+                if (selectedWeapon.empty()) continue;
 
                 const MissileStats& mStats = TacticalDatabase::GetMissile(selectedWeapon);
                 float distToTarget = MathUtils::GetDistance(transform.pos, threat->pos);
@@ -551,17 +549,14 @@ public:
                 constexpr float MIN_ENGAGEMENT_RANGE_NM = 0.5f;
                 if (distToTarget < MIN_ENGAGEMENT_RANGE_NM) continue;
 
-                // DOCTRINE RULE 4: Shoot-Look-Shoot
-                // Are we ALREADY engaging this threat with a missile in flight?
-                constexpr int MAX_SHOTS_PER_THREAT = 2; // Never put more than 2 missiles on one contact
+                // DOCTRINE RULE 4: Shoot-Look-Shoot: Are we ALREADY engaging this threat with a missile in flight?
+                constexpr int MAX_SHOTS_PER_THREAT = 2;
 
                 int activeShots = CountActiveShotsAgainst(log, *threat);
                 if (activeShots >= MAX_SHOTS_PER_THREAT) {
                     continue; // Already saturated this target, move on to next threat
                 }
 
-                // Only fire the SECOND shot once the first one has had a chance to work
-                // (don't dump both missiles in the same instant)
                 if (activeShots == 1 && threat->timeToImpactSec > 30.0f) {
                     continue; // First shot is still in flight with time to spare - let it work
                 }
@@ -621,7 +616,7 @@ public:
 
     static void ProximityFuseSystem(entt::registry& registry) {
         auto missiles = registry.view<Transform2D, Warhead, IFF>();
-        auto shipTargets = registry.view<Transform2D, Hull, IFF>();
+        auto shipTargets = registry.view<Transform2D, Hull, IFF, Kinematics, RadarSignature>();
 
         for (auto missile : missiles) {
             if (registry.all_of<DeadTag>(missile)) continue;
@@ -633,6 +628,8 @@ public:
             for (auto target: shipTargets) {
                 auto& tTrans = shipTargets.get<Transform2D>(target);
                 auto& tIFF = shipTargets.get<IFF>(target);
+                auto& tKin = shipTargets.get<Kinematics>(target);
+                auto& tSig = shipTargets.get<RadarSignature>(target);
 
                 if (mIFF.isHostile == tIFF.isHostile) continue;
 
@@ -640,49 +637,91 @@ public:
                 MathUtils::Vec2 diff = MathUtils::Sub(mTrans.pos, tTrans.pos);
                 float distNmSq = MathUtils::LengthSq(diff);
 
-                // DETONATION
+                // DETONATION SEQUENCE
                 if (distNmSq <= warhead.lethalRadiusNmSq) {
-                    auto& hull = shipTargets.get<Hull>(target);
-                    hull.currentHP -= warhead.yieldDamage;
 
-                    if (VERBOSE_COMBAT_LOG) {
-                        std::cout << "[IMPACT] Missile hit entity " << (uint32_t)target
-                                  << " for " << warhead.yieldDamage << " dmg, HP now " << hull.currentHP << "\n";
+                    // --- DYNAMIC PK CALCULATION ---
+                    float dynamicPk = warhead.baseReliability;
+
+                    // Todo: More realistic calculation instead of broad assumptions
+                    // Kinematic Evasion: Is the target moving fast?
+                    if (tKin.currentSpeedKnots > 350.0f) {
+                        dynamicPk *= 0.6f; // Fast targets are 40% harder to hit
+                    } else if (tKin.currentSpeedKnots > 35.0f) {
+                        dynamicPk *= 0.9f; // Fast ships are slightly harder to hit
                     }
 
-                    if (hull.currentHP <= 0.0f) {
-                        registry.emplace_or_replace<DeadTag>(target);
-                        if (VERBOSE_COMBAT_LOG) {
-                            std::cout << "[KILL] Entity " << (uint32_t)target << " destroyed\n";
+                    // Signature Evasion: Is the target stealthy/small?
+                    if (tSig.rcs < 1.0f) {
+                        dynamicPk *= 0.7f; // Small RCS degrades seeker lock
+                    }
+
+                    // --- ROLL THE DICE ---
+                    float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+
+                    // Use a fallback RNG if the global one isn't injected yet, to prevent crashes
+                    std::mt19937 fallbackRng(std::random_device{}());
+                    auto& rng = registry.ctx().contains<std::mt19937>() ? registry.ctx().get<std::mt19937>() : fallbackRng;
+
+                    std::uniform_real_distribution<float> distRoll(0.0f, 1.0f);
+                    float roll = distRoll(rng);
+
+                    float distNM = std::sqrt(distNmSq);
+
+                    // --- DETERMINE OUTCOME ---
+                    if (roll <= dynamicPk) {
+                        // HIT
+                        auto& hull = shipTargets.get<Hull>(target);
+                        hull.currentHP -= warhead.yieldDamage;
+
+                        MetricsLogger::Log(simTime, "IMPACT", (uint32_t)warhead.shooter, 0, warhead.weaponId, distNM, "HIT");
+
+                        if (VERBOSE_COMBAT_LOG) std::cout << "[IMPACT] Missile HIT entity " << (uint32_t)target <<"\n";
+
+                        if (hull.currentHP <= 0.0f) {
+                            registry.emplace_or_replace<DeadTag>(target);
                         }
+                    } else {
+                        // MISS
+                        MetricsLogger::Log(simTime, "IMPACT", (uint32_t)warhead.shooter, 0, warhead.weaponId, distNM, "MISS");
+
+                        if (VERBOSE_COMBAT_LOG) std::cout << "[IMPACT] Missile MISSED entity " << (uint32_t)target << " (Roll: " << roll << ", Required: " << dynamicPk << ")\n";
                     }
 
                     registry.emplace_or_replace<DeadTag>(missile);
                     break;
                 }
-                if (registry.all_of<DeadTag>(missile)) continue;
+            }
 
-                for (auto otherMissile : missiles) {
-                    if (otherMissile == missile) continue;
-                    if (registry.all_of<DeadTag>(otherMissile)) continue;
+            if (registry.all_of<DeadTag>(missile)) continue;
 
-                    auto& oIFF = missiles.get<IFF>(otherMissile);
-                    if (mIFF.isHostile == oIFF.isHostile) continue;
+            for (auto otherMissile : missiles) {
+                if (otherMissile == missile) continue;
+                if (registry.all_of<DeadTag>(otherMissile)) continue;
 
-                    auto& oTrans = missiles.get<Transform2D>(otherMissile);
-                    float distNmSq = MathUtils::LengthSq(MathUtils::Sub(mTrans.pos, oTrans.pos));
-                    constexpr float INTERCEPT_KILL_RADIUS_NM = 0.05f; // ~300ft
-                    if (distNmSq <= INTERCEPT_KILL_RADIUS_NM * INTERCEPT_KILL_RADIUS_NM) {
-                        registry.emplace_or_replace<DeadTag>(missile);
-                        registry.emplace_or_replace<DeadTag>(otherMissile);
-                        if (VERBOSE_COMBAT_LOG) {
-                            std::cout << "[INTERCEPT] Missile " << (uint32_t)missile
-                                      << " destroyed missile " << (uint32_t)otherMissile << "\n";
-                        }
-                        break;
+                auto& oIFF = missiles.get<IFF>(otherMissile);
+                if (mIFF.isHostile == oIFF.isHostile) continue;
+
+                auto& oTrans = missiles.get<Transform2D>(otherMissile);
+                float distNmSq = MathUtils::LengthSq(MathUtils::Sub(mTrans.pos, oTrans.pos));
+                constexpr float INTERCEPT_KILL_RADIUS_NM = 0.05f; // ~300ft
+
+                if (distNmSq <= INTERCEPT_KILL_RADIUS_NM * INTERCEPT_KILL_RADIUS_NM) {
+                    float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+                    auto& otherWarhead = missiles.get<Warhead>(otherMissile);
+
+                    MetricsLogger::Log(simTime, "INTERCEPT", (uint32_t)warhead.shooter, 3, warhead.weaponId, std::sqrt(distNmSq), "KILLED_THREAT");
+                    MetricsLogger::Log(simTime, "SHOT_DOWN", (uint32_t)otherWarhead.shooter, 0, otherWarhead.weaponId, std::sqrt(distNmSq), "INTERCEPTED");
+
+                    registry.emplace_or_replace<DeadTag>(missile);
+                    registry.emplace_or_replace<DeadTag>(otherMissile);
+                    if (VERBOSE_COMBAT_LOG) {
+                        std::cout << "[INTERCEPT] Missile " << (uint32_t)missile
+                                  << " destroyed missile " << (uint32_t)otherMissile << "\n";
                     }
-
+                    break;
                 }
+
             }
         }
     }
@@ -768,18 +807,28 @@ private:
         );
         registry.emplace<Transform2D>(missile,
             shooterTransform.pos, shooterTransform.altitude, shooterTransform.heading);
+
         registry.emplace<Kinematics>(missile,
             shooterKin.velocity, shooterKin.headingVector,
             mStats.maxSpeedKnots, 600.0f, mStats.maxSpeedKnots, 50.0f);
+
         registry.emplace<Aerodynamics>(missile,
             mStats.massKg, 1.0f / mStats.massKg, mStats.areaM2,
             mStats.thrustNewtons, mStats.maxFuelKg, mStats.burnRateKgSec,
             mStats.cruiseAltitudeMeters);
+
+        float baseReliability = 0.90f; // Todo: Pull this from JSON file
         registry.emplace<Warhead>(missile,
             mStats.warheadYield, mStats.lethalRadiusNM,
-            mStats.lethalRadiusNM * mStats.lethalRadiusNM);
+            mStats.lethalRadiusNM * mStats.lethalRadiusNM,
+            baseReliability, weaponId, shooter);
+
         registry.emplace<RadarSignature>(missile, mStats.rcs, mStats.rcsFourthRoot);
         registry.emplace<IFF>(missile, shooterIFF.isHostile);
+
+        float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+        float distToTarget = MathUtils::GetDistance(shooterTransform.pos, target.pos);
+        MetricsLogger::Log(simTime, "FIRE", (uint32_t)shooter, (int)target.classification, weaponId, distToTarget, "IN_FLIGHT");
 
         return missile;
     }
