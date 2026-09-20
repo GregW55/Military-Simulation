@@ -100,13 +100,19 @@ public:
                         float closestDist = 999999.0f;
                         RadarTrack* best = nullptr;
                         for (auto& track : myTracks) {
+                            float distFromAssignedTarget = MathUtils::GetDistance(seeker->targetPos, track.pos);
+                            constexpr float SEEKER_IDENTITY_GATE_NM = 0.5f;
+                            if (distFromAssignedTarget > SEEKER_IDENTITY_GATE_NM) continue;
+
                             float d = MathUtils::GetDistance(trans.pos, track.pos);
                             if (d < closestDist) {
                                 closestDist = d;
                                 best = &track;
                             }
                         }
-                        if (best && closestDist < seeker->rangeNM) {
+
+                        constexpr float TRACK_FRESHNESS_THRESHOLD_SEC = 1.0f; // must have refreshed recently to count as a real lock
+                        if (best && closestDist < seeker->rangeNM && best->ageSec < TRACK_FRESHNESS_THRESHOLD_SEC) {
                             seeker->targetPos = best->pos;
                             seeker->targetVel = best->vel;
                             seeker->targetAltitude = best->altitude;
@@ -128,12 +134,40 @@ public:
                         kin.headingVector.y = std::sin(currentAngle * DEG_TO_RAD);
                     } else {
                         seeker->timeSinceLastCorrelation += deltaTime;
-                        constexpr float TARGET_LOST_TIMEOUT_SEC = 60.0f; // Todo: Make this a global variable and maybe its own helper function
-                        if (seeker->timeSinceLastCorrelation > TARGET_LOST_TIMEOUT_SEC) {
-                            kin.isDead = true;
-                            if (auto* warhead = registry.try_get<Warhead>(entity)) {
-                                float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
-                                MetricsLogger::Log(simTime, "CRASH", (uint32_t)warhead->shooter, 0, warhead->weaponId, 0.0f, "SELF_DESTRUCT_TARGET_LOST");
+
+                        constexpr float SEARCH_GRACE_PERIOD_SEC = 4.0f; // Todo: Make this a global variable
+                        if (seeker->timeSinceLastCorrelation > SEARCH_GRACE_PERIOD_SEC) {
+                            // Grace period expired - try network retarget before giving up
+                            bool missileIsHostile = registry.get<IFF>(entity).isHostile;
+                            RadarTrack* bestNetworkTarget = nullptr;
+                            float bestScore = -1.0f;
+
+                            auto& networkDetectionData = registry.ctx().get<RadarDetectionData>();
+                            auto radarShips = registry.view<RadarEmitter, IFF>();
+                            for (auto observer : radarShips) {
+                                if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
+                                for (auto& track : networkDetectionData.activeTracks[observer]) {
+                                    constexpr float TRACK_FRESHNESS_THRESHOLD_SEC = 1.0f;
+                                    if (track.ageSec > TRACK_FRESHNESS_THRESHOLD_SEC) continue;
+                                    if (track.consistentObservationSec < 1.0f) continue;
+                                    if (track.threatScore > bestScore) {
+                                        bestScore = track.threatScore;
+                                        bestNetworkTarget = &track;
+                                    }
+                                }
+                            }
+
+                            if (bestNetworkTarget) {
+                                seeker->targetPos = bestNetworkTarget->pos;
+                                seeker->targetVel = bestNetworkTarget->vel;
+                                seeker->targetAltitude = bestNetworkTarget->altitude;
+                                seeker->timeSinceLastCorrelation = 0.0f;
+                            } else {
+                                kin.isDead = true;
+                                if (auto* warhead = registry.try_get<Warhead>(entity)) {
+                                    float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+                                    MetricsLogger::Log(simTime, "CRASH", (uint32_t)warhead->shooter, 0, warhead->weaponId, 0.0f, "SELF_DESTRUCT_NO_TARGET");
+                                }
                             }
                         }
                     }
@@ -423,9 +457,14 @@ public:
         auto observers = registry.view<Transform2D, RadarEmitter, IFF>();
         auto targets = registry.view<Transform2D, RadarSignature, IFF>();
 
-        for (auto& [obsId, trackList] : detectionData.activeTracks) {
-            for (auto& track : trackList) track.ageSec += deltaTime;
-            std::erase_if(trackList, [](const RadarTrack& t) { return t.ageSec > TRACK_STALE_TIMEOUT_SEC; });
+        for (auto it = detectionData.activeTracks.begin(); it != detectionData.activeTracks.end(); ) {
+            if (!registry.valid(it->first)) {
+                it = detectionData.activeTracks.erase(it);
+            } else {
+                for (auto& track : it->second) track.ageSec += deltaTime;
+                std::erase_if(it->second, [](const RadarTrack& t) { return t.ageSec > TRACK_STALE_TIMEOUT_SEC; });
+                ++it;
+            }
         }
 
         for (auto observer : observers) {

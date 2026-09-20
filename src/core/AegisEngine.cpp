@@ -217,9 +217,12 @@ void AegisEngine::Render() {
                 std::string tooltip = TextFormat("Alt: %.1fm\nSpd: %.1f kts", transform.altitude, kin->currentSpeedKnots);
 
                 if (auto* mag = registry.try_get<Magazine>(entity)) {
+                    std::vector<std::pair<std::string, int>> sortedAmmo(mag->currentAmmo.begin(), mag->currentAmmo.end());
+                    std::sort(sortedAmmo.begin(), sortedAmmo.end());
+
                     tooltip += "\nAmmo:";
-                    for (const auto& [weaponId, count] : mag->currentAmmo) {
-                        tooltip += TextFormat("\n %s: %d", weaponId.c_str(), count);
+                    for (const auto& [weaponId, count] : sortedAmmo) {
+                        tooltip += TextFormat("\n  %s: %d", weaponId.c_str(), count);
                     }
                 }
 
