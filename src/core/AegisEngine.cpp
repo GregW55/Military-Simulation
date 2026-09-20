@@ -300,7 +300,7 @@ void AegisEngine::Run() {
 
             // If 1 or 0 ships are left, and no missiles are in the air, the battle is over
             if (activeShips <= 1 && activeMissiles == 0) {
-                std::cout << "Combat concluded early at " <<simTime << " seconds. \n";
+                std::cout << "Combat concluded early at " <<simTime << " seconds." << std::endl;
                 break;
             }
         }
@@ -316,7 +316,9 @@ void AegisEngine::Run() {
 }
 
 void AegisEngine::Shutdown() {
-    registry.ctx().get<MapRenderer>().UnloadAssets();
     MetricsLogger::Shutdown();
-    CloseWindow();
+    if (!isHeadless) {
+        registry.ctx().get<MapRenderer>().UnloadAssets();
+        CloseWindow();
+    }
 }

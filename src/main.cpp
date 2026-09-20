@@ -1,7 +1,6 @@
 #include "core/AegisEngine.h"
 #include <string>
 #include <iostream>
-#include <stdexcept>
 
 int main(int argc, char* argv[]) {
     bool headless = false;
@@ -10,7 +9,7 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--headless") headless = true;
-        if (arg == "--seed" && i + 1 < argc){ 
+        if (arg == "--seed" && i + 1 < argc){
             std::string seedStr =  argv[++i];
             try {
                 seed = std::stoi(seedStr);
