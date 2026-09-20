@@ -205,44 +205,102 @@ void AegisEngine::Render() {
         if (!registry.all_of<Warhead>(entity)) {
             auto& transform = renderView.get<Transform2D>(entity);
             auto& iff = renderView.get<IFF>(entity);
+            auto* kin = registry.try_get<Kinematics>(entity);
             MathUtils::Vec2 screenPos = map.WorldToScreen(transform.pos);
 
             Color c = iff.isHostile ? RED : BLUE;
             DrawCircleV({screenPos.x, screenPos.y}, 5.0f, c);
 
-            bool isHovered = MathUtils::GetDistance(mPos, screenPos) < 10.0f;
-            auto* kin = registry.try_get<Kinematics>(entity);
+            bool isHovered = MathUtils::GetDistance(mPos, screenPos) < 4.0f;
+
             if (isHovered && kin) {
-                const char* tooltip = TextFormat("Alt: %.1fm\nSpd: %.1f kts", transform.altitude, kin->currentSpeedKnots);
-                DrawText(tooltip, screenPos.x + 10, screenPos.y - 20, 20, GREEN);
+                std::string tooltip = TextFormat("Alt: %.1fm\nSpd: %.1f kts", transform.altitude, kin->currentSpeedKnots);
+
+                if (auto* mag = registry.try_get<Magazine>(entity)) {
+                    tooltip += "\nAmmo:";
+                    for (const auto& [weaponId, count] : mag->currentAmmo) {
+                        tooltip += TextFormat("\n %s: %d", weaponId.c_str(), count);
+                    }
+                }
+
+                DrawText(tooltip.c_str(), screenPos.x + 10, screenPos.y - 20, 20, GREEN);
             }
 
             if (auto* radar = registry.try_get<RadarEmitter>(entity)) {
-                float radarRadiusPx = MathUtils::NmToPixels(radar->rangeNM);
                 if (showRadarRings || isHovered) {
-                    DrawCircleLines(screenPos.x, screenPos.y, radarRadiusPx, Fade(c, 0.5f));
+                    auto sigTargets = registry.view<Transform2D, RadarSignature, IFF>();
+                    entt::entity nearest = entt::null;
+                    float nearestDistSq = std::numeric_limits<float>::max();
+
+                    for (auto target : sigTargets) {
+                        if (sigTargets.get<IFF>(target).isHostile == iff.isHostile) continue;
+                        float d = MathUtils::LengthSq(MathUtils::Sub(transform.pos, sigTargets.get<Transform2D>(target).pos));
+                        if (d < nearestDistSq) {
+                            nearestDistSq = d;
+                            nearest = target;
+                        }
+                    }
+
+                    if (registry.valid(nearest)) {
+                        auto& tgtTransform = sigTargets.get<Transform2D>(nearest);
+                        auto& tgtSig = sigTargets.get<RadarSignature>(nearest);
+
+                        float obsHorizon = MathUtils::GetRadarHorizonNM(transform.altitude);
+                        float tgtHorizon = MathUtils::GetRadarHorizonNM(tgtTransform.altitude);
+                        float effectiveRangeNM = std::min(radar->rangeNM * tgtSig.rcsFourthRoot, obsHorizon + tgtHorizon);
+                        float effectiveRadiusPx = MathUtils::NmToPixels(effectiveRangeNM);
+
+                        DrawCircleLines(screenPos.x, screenPos.y, effectiveRadiusPx, Fade(GREEN, 0.5f));
+
+                        const char* rangeText = TextFormat("Eff. range vs nearest contact: %.1f nm", effectiveRangeNM);
+                        DrawText(rangeText, screenPos.x + 10, screenPos.y - 40, 16, GREEN);
+                    }
                 }
             }
         }
-    }
 
-    for (auto entity : renderView) {
-        if (registry.all_of<Warhead>(entity)) {
+        else if (registry.all_of<Warhead>(entity)) {
             auto& transform = renderView.get<Transform2D>(entity);
             auto& iff = renderView.get<IFF>(entity);
-            auto& kin = registry.get<Kinematics>(entity);
+            auto* kin = registry.try_get<Kinematics>(entity);
             MathUtils::Vec2 screenPos = map.WorldToScreen(transform.pos);
 
             Color c = iff.isHostile ? RED : BLUE;
 
             // Draw a flame trail behind the missile
-            MathUtils::Vec2 tailPos = MathUtils::Sub(transform.pos, MathUtils::Scale(kin.headingVector, 0.5f));
+            MathUtils::Vec2 tailPos = MathUtils::Sub(transform.pos, MathUtils::Scale(kin->headingVector, 0.5f));
             MathUtils::Vec2 tailScreen = map.WorldToScreen(tailPos);
             DrawLineEx({screenPos.x, screenPos.y}, {tailScreen.x, tailScreen.y}, 2.0f, ORANGE);
 
             // Draw the warhead
             DrawCircleV({screenPos.x, screenPos.y}, 3.0f, c);
             DrawCircleLines(screenPos.x, screenPos.y, 5.0f, Fade(c, 0.6f));
+
+            // --- HOVER & TARGET HIGHLIGHT LOGIC ---
+            bool isHovered = MathUtils::GetDistance(mPos, screenPos) < 4.0f;
+            if (isHovered && kin) {
+                const char* tooltip = TextFormat("MISSILE\nAlt: %.1fm\nSpd: %.1f kts", transform.altitude, kin->currentSpeedKnots);
+                DrawText(tooltip, static_cast<int>(screenPos.x + 10), static_cast<int>(screenPos.y - 20), 20, PURPLE);
+
+                // Pull target position directly from SeekerHead
+                if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
+                    MathUtils::Vec2 targetScreenPos = map.WorldToScreen(seeker->targetPos);
+
+                    // Draw a purple rectangle box around the target destination/position
+                    DrawRectangleLines(
+                        static_cast<int>(targetScreenPos.x - 12),
+                        static_cast<int>(targetScreenPos.y - 12),
+                        24.0f, 24.0f, PURPLE
+                    );
+
+                    // Draw connecting line from missile to its target point
+                    DrawLineEx(
+                        {screenPos.x, screenPos.y},
+                        {targetScreenPos.x, targetScreenPos.y},
+                        1.5f, Fade(PURPLE, 0.7f)
+                    );
+                }
+            }
         }
     }
 
