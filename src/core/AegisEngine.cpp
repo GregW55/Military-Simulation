@@ -229,8 +229,11 @@ void AegisEngine::Render() {
     for (auto entity : renderView) {
         if (registry.all_of<Warhead>(entity)) {
             auto& transform = renderView.get<Transform2D>(entity);
+            auto& iff = renderView.get<IFF>(entity);
             auto& kin = registry.get<Kinematics>(entity);
             MathUtils::Vec2 screenPos = map.WorldToScreen(transform.pos);
+
+            Color c = iff.isHostile ? RED : BLUE;
 
             // Draw a flame trail behind the missile
             MathUtils::Vec2 tailPos = MathUtils::Sub(transform.pos, MathUtils::Scale(kin.headingVector, 0.5f));
@@ -238,8 +241,8 @@ void AegisEngine::Render() {
             DrawLineEx({screenPos.x, screenPos.y}, {tailScreen.x, tailScreen.y}, 2.0f, ORANGE);
 
             // Draw the warhead
-            DrawCircleV({screenPos.x, screenPos.y}, 3.0f, YELLOW);
-            DrawCircleLines(screenPos.x, screenPos.y, 5.0f, RED);
+            DrawCircleV({screenPos.x, screenPos.y}, 3.0f, c);
+            DrawCircleLines(screenPos.x, screenPos.y, 5.0f, Fade(c, 0.6f));
         }
     }
 

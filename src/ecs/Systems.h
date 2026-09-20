@@ -26,23 +26,36 @@ public:
             if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
 
                 if (seeker->phase == GuidancePhase::MIDCOURSE_DATALINK) {
-                    if (registry.valid(seeker->datalinkSource)) {
-                        auto& shipTracks = registry.ctx().get<RadarDetectionData>().activeTracks[seeker->datalinkSource];
+                    bool missileIsHostile = registry.get<IFF>(entity).isHostile;
 
-                        float closestDist = 999999.0f;
-                        for (const auto& track : shipTracks) {
+                    // Network-wide datalink: check EVERY friendly ship's radar picture
+                    RadarTrack* best = nullptr;
+                    float closestDist = DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM;
+
+                    auto& detectionData = registry.ctx().get<RadarDetectionData>();
+                    auto radarShips = registry.view<RadarEmitter, IFF>();
+                    for (auto observer : radarShips) {
+                        if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
+
+                        for (auto& track : detectionData.activeTracks[observer]) {
                             float d = MathUtils::GetDistance(seeker->targetPos, track.pos);
-                            if (d < DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM) {
-                                if (d < closestDist) {
-                                    closestDist = d;
-                                    seeker->targetPos = track.pos;
-                                    seeker->targetVel = track.vel;
-                                    seeker->targetAltitude = track.altitude;
-                                }
+                            if (d < closestDist) {
+                                closestDist = d;
+                                best = &track;
                             }
                         }
+                    }
+                    if (best) {
+                        seeker->targetPos = best->pos;
+                        seeker->targetVel = best->vel;
+                        seeker->targetAltitude = best->altitude;
+                        seeker->timeSinceLastCorrelation = 0.0f;
                     } else {
-                        seeker->phase = GuidancePhase::INERTIAL_BLIND;
+                        seeker->timeSinceLastCorrelation += deltaTime;
+                        constexpr float MIDCOURSE_LOST_TIMEOUT_SEC = 30.0f; // Todo: Make this a global variable
+                        if (seeker->timeSinceLastCorrelation > MIDCOURSE_LOST_TIMEOUT_SEC) {
+                            seeker->phase = GuidancePhase::INERTIAL_BLIND;
+                        }
                     }
 
                     MathUtils::Vec2 interceptPos = MathUtils::PredictIntercept(
@@ -53,7 +66,19 @@ public:
                     float distToIntercept = MathUtils::Length(toIntercept);
 
                     if (distToIntercept > 0.001f) {
-                        kin.headingVector = MathUtils::Scale(toIntercept, 1.0f / distToIntercept);
+                        MathUtils::Vec2 desiredHeading = MathUtils::Scale(toIntercept, 1.0f / distToIntercept);
+
+                        float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
+                        float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
+                        float angleDiff = MathUtils::GetShortestAngleDiff(currentAngle, desiredAngle);
+
+                        constexpr float MAX_MISSILE_TURN_RATE_DEG_SEC = 25.0f; // todo: calculate based on actual missile
+                        float maxStep = MAX_MISSILE_TURN_RATE_DEG_SEC * deltaTime;
+                        float clampedStep = std::clamp(angleDiff, -maxStep, maxStep);
+
+                        float newAngle = currentAngle + clampedStep;
+                        kin.headingVector.x = std::cos(newAngle * DEG_TO_RAD);
+                        kin.headingVector.y = std::sin(newAngle * DEG_TO_RAD);
                     }
 
                     if (seeker->type == SeekerType::ACTIVE_RADAR && distToIntercept < seeker->rangeNM) {
@@ -70,27 +95,47 @@ public:
                 else if (seeker->phase == GuidancePhase::TERMINAL_PITBULL) {
                     auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[entity];
 
+                    bool foundCorrelatedTrack = false;
                     if (!myTracks.empty()) {
                         float closestDist = 999999.0f;
-                        for (const auto& track : myTracks) {
+                        RadarTrack* best = nullptr;
+                        for (auto& track : myTracks) {
                             float d = MathUtils::GetDistance(trans.pos, track.pos);
                             if (d < closestDist) {
                                 closestDist = d;
-                                seeker->targetPos = track.pos;
-                                seeker->targetVel = track.vel;
-                                seeker->targetAltitude = track.altitude;
+                                best = &track;
                             }
                         }
+                        if (best && closestDist < seeker->rangeNM) {
+                            seeker->targetPos = best->pos;
+                            seeker->targetVel = best->vel;
+                            seeker->targetAltitude = best->altitude;
+                            foundCorrelatedTrack = true;
+                            seeker->timeSinceLastCorrelation = 0.0f;
+                        }
+                    }
 
+                    if (foundCorrelatedTrack) {
                         float turnRateDeg = MathUtils::CalculateProNavTurnRate(
                             trans.pos, kin.velocity, seeker->targetPos, seeker->targetVel, 4.0f
                         );
+                        constexpr float MAX_MISSILE_TURN_RATE_DEG_SEC = 25.0f; // todo: make this a per missile loaded from json missile data
+                        turnRateDeg = std::clamp(turnRateDeg, -MAX_MISSILE_TURN_RATE_DEG_SEC, MAX_MISSILE_TURN_RATE_DEG_SEC);
 
                         float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
                         currentAngle += (turnRateDeg * deltaTime);
-
                         kin.headingVector.x = std::cos(currentAngle * DEG_TO_RAD);
                         kin.headingVector.y = std::sin(currentAngle * DEG_TO_RAD);
+                    } else {
+                        seeker->timeSinceLastCorrelation += deltaTime;
+                        constexpr float TARGET_LOST_TIMEOUT_SEC = 60.0f; // Todo: Make this a global variable and maybe its own helper function
+                        if (seeker->timeSinceLastCorrelation > TARGET_LOST_TIMEOUT_SEC) {
+                            kin.isDead = true;
+                            if (auto* warhead = registry.try_get<Warhead>(entity)) {
+                                float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+                                MetricsLogger::Log(simTime, "CRASH", (uint32_t)warhead->shooter, 0, warhead->weaponId, 0.0f, "SELF_DESTRUCT_TARGET_LOST");
+                            }
+                        }
                     }
                 }
                 else if (seeker->phase == GuidancePhase::INERTIAL_BLIND) {
@@ -434,53 +479,63 @@ public:
                         if (dSq < closestDistSq) {
                             closestDistSq = dSq;
                             bestMatchIndex = i;
-                    }
-                }
-
-                if (bestMatchIndex != -1) {
-                    MathUtils::Vec2 calculatedVel = MathUtils::Scale(
-                        MathUtils::Sub(ping.pos, myTracks[bestMatchIndex].pos),
-                        1.0f / timeDelta);
-                    myTracks[bestMatchIndex].pos = ping.pos;
-                    myTracks[bestMatchIndex].vel = calculatedVel;
-                    myTracks[bestMatchIndex].altitude = ping.altitude;
-                    myTracks[bestMatchIndex].ageSec = 0.0f;
-                    myTracks[bestMatchIndex].speedKnots = MathUtils::Length(calculatedVel) * 3600.0f;
-
-                    MathUtils::Vec2 toObserver = MathUtils::Sub(obsTransform.pos, ping.pos);
-                    float dist = MathUtils::Length(toObserver);
-                    if (dist > 0.001f) {
-                        MathUtils::Vec2 dir = MathUtils::Scale(toObserver, 1.0f / dist);
-                        myTracks[bestMatchIndex].closingSpeedKnots = MathUtils::Dot(calculatedVel, dir) * 3600.0f;
+                        }
                     }
 
-                    myTracks[bestMatchIndex].timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(
-                        obsTransform.pos, ping.pos, calculatedVel);
+                    constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4000.0f; // Todo: pull from the missile json
+                    if (bestMatchIndex != -1) {
+                        MathUtils::Vec2 calculatedVel = MathUtils::Scale(
+                            MathUtils::Sub(ping.pos, myTracks[bestMatchIndex].pos),
+                            1.0f / timeDelta);
 
-                    ThreatClass newClassification = ThreatAnalysis::Classify(myTracks[bestMatchIndex].speedKnots, ping.altitude);
-                    if (newClassification == myTracks[bestMatchIndex].classification) {
-                        myTracks[bestMatchIndex].consistentObservationSec += deltaTime;
-                    } else {
-                        myTracks[bestMatchIndex].consistentObservationSec = 0.0f;
+                        float derivedSpeedKnots = MathUtils::Length(calculatedVel) * 3600.0f;
+                        if (derivedSpeedKnots > MAX_PLAUSIBLE_SPEED_KNOTS) {
+                            // Treat as a bad/noisy observation — hold last known velocity instead of trusting the spike
+                            calculatedVel = myTracks[bestMatchIndex].vel;
+                            derivedSpeedKnots = myTracks[bestMatchIndex].speedKnots;
+                        }
+                        // Todo: Maybe make something so if an object continues to go this fast we pick it up as a enemy
+
+                        myTracks[bestMatchIndex].pos = ping.pos;
+                        myTracks[bestMatchIndex].vel = calculatedVel;
+                        myTracks[bestMatchIndex].altitude = ping.altitude;
+                        myTracks[bestMatchIndex].ageSec = 0.0f;
+                        myTracks[bestMatchIndex].speedKnots = derivedSpeedKnots;
+
+                        MathUtils::Vec2 toObserver = MathUtils::Sub(obsTransform.pos, ping.pos);
+                        float dist = MathUtils::Length(toObserver);
+                        if (dist > 0.001f) {
+                            MathUtils::Vec2 dir = MathUtils::Scale(toObserver, 1.0f / dist);
+                            myTracks[bestMatchIndex].closingSpeedKnots = MathUtils::Dot(calculatedVel, dir) * 3600.0f;
+                        }
+
+                        myTracks[bestMatchIndex].timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(
+                            obsTransform.pos, ping.pos, calculatedVel);
+
+                        ThreatClass newClassification = ThreatAnalysis::Classify(myTracks[bestMatchIndex].speedKnots, ping.altitude);
+                        if (newClassification == myTracks[bestMatchIndex].classification) {
+                            myTracks[bestMatchIndex].consistentObservationSec += deltaTime;
+                        } else {
+                            myTracks[bestMatchIndex].consistentObservationSec = 0.0f;
+                        }
+                        myTracks[bestMatchIndex].classification = newClassification;
+                        myTracks[bestMatchIndex].threatScore = ThreatAnalysis::ComputeThreatScore(myTracks[bestMatchIndex]);
+                        matched = true;
                     }
-                    myTracks[bestMatchIndex].classification = newClassification;
-                    myTracks[bestMatchIndex].threatScore = ThreatAnalysis::ComputeThreatScore(myTracks[bestMatchIndex]);
-                    matched = true;
-                }
 
-                if (!matched) {
-                    RadarTrack newTrack;
-                    newTrack.pos = ping.pos;
-                    newTrack.vel = {0.0f, 0.0f};
-                    newTrack.ageSec = 0.0f;
-                    newTrack.altitude = ping.altitude;
-                    newlyDiscoveredTracks.push_back(newTrack);
+                    if (!matched) {
+                        RadarTrack newTrack;
+                        newTrack.pos = ping.pos;
+                        newTrack.vel = {0.0f, 0.0f};
+                        newTrack.ageSec = 0.0f;
+                        newTrack.altitude = ping.altitude;
+                        newlyDiscoveredTracks.push_back(newTrack);
+                    }
                 }
+                myTracks.insert(myTracks.end(), newlyDiscoveredTracks.begin(), newlyDiscoveredTracks.end());
             }
-            myTracks.insert(myTracks.end(), newlyDiscoveredTracks.begin(), newlyDiscoveredTracks.end());
         }
     }
-}
 
     // --- COMBAT SYSTEM ---
     static void CombatSystem(entt::registry& registry, float deltaTime) {
@@ -795,6 +850,12 @@ private:
     {
         auto missile = registry.create();
 
+        MathUtils::Vec2 initialHeading = { 1.0f, 0.0f }; // fallback
+        MathUtils::Vec2 toTarget = MathUtils::Sub(target.pos, shooterTransform.pos);
+        float distToTarget = MathUtils::Length(toTarget);
+        if (distToTarget > 0.001f) {
+            initialHeading = MathUtils::Scale(toTarget, 1.0f / distToTarget);
+        }
         registry.emplace<SeekerHead>(missile,
             shooter,
             mStats.seekerType,
@@ -809,7 +870,7 @@ private:
             shooterTransform.pos, shooterTransform.altitude, shooterTransform.heading);
 
         registry.emplace<Kinematics>(missile,
-            shooterKin.velocity, shooterKin.headingVector,
+            shooterKin.velocity, initialHeading,
             mStats.maxSpeedKnots, 600.0f, mStats.maxSpeedKnots, 50.0f);
 
         registry.emplace<Aerodynamics>(missile,
@@ -827,7 +888,7 @@ private:
         registry.emplace<IFF>(missile, shooterIFF.isHostile);
 
         float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
-        float distToTarget = MathUtils::GetDistance(shooterTransform.pos, target.pos);
+
         MetricsLogger::Log(simTime, "FIRE", (uint32_t)shooter, (int)target.classification, weaponId, distToTarget, "IN_FLIGHT");
 
         return missile;

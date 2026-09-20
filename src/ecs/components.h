@@ -150,6 +150,7 @@ struct SeekerHead {
     MathUtils::Vec2 targetVel = {0.0f, 0.0f};
     float targetAltitude = 0.0f;
     bool isInterceptor = false; // Determines terminal-phase altitude behavior
+    float timeSinceLastCorrelation = 0.0f;
 };
 
 // What weapons are currently loaded, and can we fire
