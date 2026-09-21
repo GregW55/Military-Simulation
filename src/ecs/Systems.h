@@ -9,6 +9,7 @@
 #include <random>
 
 constexpr bool VERBOSE_COMBAT_LOG = false;
+constexpr float MAX_MISSILE_TURN_RATE_DEG_SEC = 25.0f; // todo: calculate based on actual missile
 
 class Systems {
 public:
@@ -72,7 +73,6 @@ public:
                         float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
                         float angleDiff = MathUtils::GetShortestAngleDiff(currentAngle, desiredAngle);
 
-                        constexpr float MAX_MISSILE_TURN_RATE_DEG_SEC = 25.0f; // todo: calculate based on actual missile
                         float maxStep = MAX_MISSILE_TURN_RATE_DEG_SEC * deltaTime;
                         float clampedStep = std::clamp(angleDiff, -maxStep, maxStep);
 
@@ -125,7 +125,6 @@ public:
                         float turnRateDeg = MathUtils::CalculateProNavTurnRate(
                             trans.pos, kin.velocity, seeker->targetPos, seeker->targetVel, 4.0f
                         );
-                        constexpr float MAX_MISSILE_TURN_RATE_DEG_SEC = 25.0f; // todo: make this a per missile loaded from json missile data
                         turnRateDeg = std::clamp(turnRateDeg, -MAX_MISSILE_TURN_RATE_DEG_SEC, MAX_MISSILE_TURN_RATE_DEG_SEC);
 
                         float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
@@ -739,10 +738,16 @@ public:
 
                     // Todo: More realistic calculation instead of broad assumptions
                     // Kinematic Evasion: Is the target moving fast?
-                    if (tKin.currentSpeedKnots > 350.0f) {
-                        dynamicPk *= 0.6f; // Fast targets are 40% harder to hit
+                    if (tKin.currentSpeedKnots > 1400.0f) {
+                        dynamicPk *= 0.25f;
+                    }
+                    else if (tKin.currentSpeedKnots > 750.0f) {
+                        dynamicPk *= 0.4f; // Targets moving this fast significantly harder to hit
+                    }
+                    else if (tKin.currentSpeedKnots > 350.0f) {
+                        dynamicPk *= 0.75f; // Fast targets are 25% harder to hit
                     } else if (tKin.currentSpeedKnots > 35.0f) {
-                        dynamicPk *= 0.9f; // Fast ships are slightly harder to hit
+                        dynamicPk *= 0.95f; // Fast ships are slightly harder to hit
                     }
 
                     // Signature Evasion: Is the target stealthy/small?

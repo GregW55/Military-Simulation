@@ -20,7 +20,7 @@ public:
 
     // Height Map
     float GetElevation(MathUtils::Vec2 pixelPos); // Returns meters
-    void LoadheightMap(const std::string& filepath);;
+    void LoadheightMap(const std::string& filepath);
 
     // Raycast check
     bool HasLineOfSight(MathUtils::Vec2 startPx, MathUtils::Vec2 endPx, float startAlt, float endAlt);

@@ -88,8 +88,12 @@ void TacticalDataLoader::Load(const std::string &filepath) {
         s.rcsFourthRoot = std::pow(s.rcs, 0.25f);
 
         // Parse the dynamic loadout dictionary
-        for (const auto& [weaponID, count] : val["loadout"].items()) {
-            s.loadout[weaponID] = count;
+        if (val.contains("loadout")) {
+            for (const auto& [weaponID, count] : val["loadout"].items()) {
+                s.loadout[weaponID] = count;
+            }
+        } else {
+            std::cerr << "[DATABASE WARNING] Ship '" << key << "' has no loadout. Defaulting to empty." << std::endl;
         }
 
         // Save to the master database

@@ -1,4 +1,5 @@
 #pragma once
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <iostream>
@@ -12,7 +13,24 @@ public:
         if (file.tellp() == 0) {
             file << "Seed,TimeSec,Event,ShooterID,TargetClass,Weapon,RangeNM,Outcome\n";
         }
-        currentSeed = seed;
+        if (!file.is_open()) {
+            std::error_code ec;
+
+            // Check if the file even exists
+            if (!std::filesystem::exists(filename, ec)) {
+                std::cerr << "File " << filename << " couldn't be opened. Reason: File does not exist.\n";
+            }
+            // If it exists but failed, it's usually a permissions issue or system error
+            else {
+                std::cerr << "File " << filename << " couldn't be opened. System Error: " << ec.message() << "\n";
+            }
+        } else {
+            if (file.tellp() == 0) {
+                file << "Seed,TimeSec,Event,ShooterID,TargetClass,Weapon,RangeNM,Outcome\n";
+            }
+            currentSeed = seed;
+        }
+
     }
 
     static void Log(float time, const std::string& event, uint32_t shooter,
