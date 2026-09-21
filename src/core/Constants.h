@@ -1,6 +1,7 @@
 #pragma once
 
-// Game Engine
+// Engine
+constexpr float fixedDelta = 1.0f;
 constexpr int OFFSET_X = -580;
 constexpr int OFFSET_Y = -470;
 constexpr float RULER_THICKNESS = 3.0f;
@@ -34,16 +35,20 @@ constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 2.0f;
 
 // Missile
 constexpr float SEEKER_ACTIVATION_SPEED_KNOTS = 400.0f;
-constexpr float SEEKER_ACTIVATION_DISTANCE = 15.0f;
 constexpr float SEEKER_FOV_DEGREES = 45.0f;
-constexpr float TERMINAL_DIVE_RANGE_PX = 200.0f;
-constexpr float MISSILE_INTERCEPT_RANGE_PX = 15.0f;
-constexpr float WAYPOINT_REACHED_DISTANCE_PX = 20.0f;
-constexpr float FUSE_DISTANCE_INTERCEPTOR_PX = 5.0f;
-constexpr float FUSE_DISTANCE_ANTISHIP_PX = 10.0f;
+constexpr float SEEKER_IDENTITY_GATE_NM = 1.5f;
+constexpr float TERMINAL_DIVE_RANGE_NM = 5.0f;
+constexpr float INTERCEPT_KILL_RADIUS_NM = 0.05f; // Aprox. 300ft
+constexpr float WAYPOINT_REACHED_DISTANCE_NM = 0.5f;
 
-// Combat Doctrine
-constexpr float RETREAT_THRESHOLD_KTS = -2.0f;
+// Ships
+constexpr float MIN_ENGAGEMENT_RANGE_NM = 0.5f;
+
+// Speed thresholds that separate contact/threat types
+// Threat assessment used to determine what the entity is (It must be X thing, depending on how fast it achieves)
+constexpr float MAX_SHIP_SPEED_KTS = 50.0f; // Maximum speed an entity could go before being reclassified as UNKNOWN
+constexpr float MIN_MISSILE_SPEED_KTS = 350.0f; // Once an entity reaches this threshold its reclassified as MISSILE
+constexpr float MIN_AIRCRAFT_SPEED_KTS = 150.0f; // Once an entity reaches this threshold its reclassified as AIRCRAFT
 
 // Physics
 // Standard atmospheric refraction constant for Radar Horizon in Nautical Miles

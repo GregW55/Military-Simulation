@@ -343,7 +343,6 @@ void AegisEngine::Run() {
 
     if (isHeadless) {
         while (simTime < 7200.0f) {
-            constexpr float fixedDelta = 1.0f;
             Update(fixedDelta);
             simTime += fixedDelta;
 

@@ -1,6 +1,9 @@
 #pragma once
 #include <cmath>
 
+/* DO NOT MODIFY ANY VARIABLES IN THIS FILE
+ * ALL VARIABLES ARE PHYSICS CONSTANTS
+ * CHANGING THEM WILL RESULT IN INACCURATE AND UNSTABLE BEHAVIOR */
 namespace Physics {
     // Constants from US Standard Atmosphere 1976
     constexpr float SEA_LEVEL_TEMP_K = 288.15f;    // 15C

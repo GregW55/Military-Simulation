@@ -3,11 +3,6 @@
 #include "MathUtils.h"
 
 namespace ThreatAnalysis {
-    // Speed thresholds that separate contact types
-    constexpr float MAX_SHIP_SPEED_KTS = 50.0f;
-    constexpr float MIN_MISSILE_SPEED_KTS = 350.0f;
-    constexpr float MIN_AIRCRAFT_SPEED_KTS = 150.0f;
-
     inline ThreatClass Classify(float speedKnots, float altitude) {
         if (speedKnots >= MIN_MISSILE_SPEED_KTS && altitude < 500.0f) {
             return ThreatClass::MISSILE_INBOUND;

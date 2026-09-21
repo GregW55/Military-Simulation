@@ -101,7 +101,6 @@ public:
                         RadarTrack* best = nullptr;
                         for (auto& track : myTracks) {
                             float distFromAssignedTarget = MathUtils::GetDistance(seeker->targetPos, track.pos);
-                            constexpr float SEEKER_IDENTITY_GATE_NM = 0.5f;
                             if (distFromAssignedTarget > SEEKER_IDENTITY_GATE_NM) continue;
 
                             float d = MathUtils::GetDistance(trans.pos, track.pos);
@@ -639,7 +638,6 @@ public:
                 if (distToTarget > mStats.maxRangeNM) continue;
 
                 // Don't fire at close range - too late for missile to arm/guide
-                constexpr float MIN_ENGAGEMENT_RANGE_NM = 0.5f;
                 if (distToTarget < MIN_ENGAGEMENT_RANGE_NM) continue;
 
                 // DOCTRINE RULE 4: Shoot-Look-Shoot: Are we ALREADY engaging this threat with a missile in flight?
@@ -803,7 +801,6 @@ public:
 
                 auto& oTrans = missiles.get<Transform2D>(otherMissile);
                 float distNmSq = MathUtils::LengthSq(MathUtils::Sub(mTrans.pos, oTrans.pos));
-                constexpr float INTERCEPT_KILL_RADIUS_NM = 0.05f; // ~300ft
 
                 if (distNmSq <= INTERCEPT_KILL_RADIUS_NM * INTERCEPT_KILL_RADIUS_NM) {
                     float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
