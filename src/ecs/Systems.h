@@ -27,6 +27,7 @@ public:
             if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
 
                 if (seeker->phase == GuidancePhase::MIDCOURSE_DATALINK) {
+                    seeker->timeSinceLaunchSec += deltaTime;
                     bool missileIsHostile = registry.get<IFF>(entity).isHostile;
 
                     // Network-wide datalink: check EVERY friendly ship's radar picture
@@ -81,7 +82,8 @@ public:
                         kin.headingVector.y = std::sin(newAngle * DEG_TO_RAD);
                     }
 
-                    if (seeker->type == SeekerType::ACTIVE_RADAR && distToIntercept < seeker->rangeNM) {
+                    if (seeker->type == SeekerType::ACTIVE_RADAR && distToIntercept < seeker->rangeNM &&
+                        seeker->timeSinceLaunchSec > MIN_TIME_BEFORE_SEEKER_ACTIVATION_SEC) {
                         seeker->phase = GuidancePhase::TERMINAL_PITBULL;
                         registry.emplace_or_replace<RadarEmitter>(entity,
                             seeker->rangeNM, seeker->rangeNM * seeker->rangeNM, 0.25f, 0.0f
@@ -100,12 +102,22 @@ public:
                         float closestDist = 999999.0f;
                         RadarTrack* best = nullptr;
                         for (auto& track : myTracks) {
+                            // FOV check : is this track within the seeker's forward-facing cone?
+                            MathUtils::Vec2 toTrack = MathUtils::Sub(track.pos, trans.pos);
+                            float distToTrack = MathUtils::Length(toTrack);
+                            if (distToTrack < 0.001f) continue;
+
+                            MathUtils::Vec2 toTrackDir = MathUtils::Scale(toTrack, 1.0f / distToTrack);
+                            float dotWithHeading = MathUtils::Dot(kin.headingVector, toTrackDir);
+                            float angleFromHeadingDeg = std::acos(std::clamp(dotWithHeading, -1.0f, 1.0f)) * RAD_TO_DEG;
+
+                            if (angleFromHeadingDeg > SEEKER_FOV_DEGREES) continue; // Outside seeker's cone, can't see it
+
                             float distFromAssignedTarget = MathUtils::GetDistance(seeker->targetPos, track.pos);
                             if (distFromAssignedTarget > SEEKER_IDENTITY_GATE_NM) continue;
 
-                            float d = MathUtils::GetDistance(trans.pos, track.pos);
-                            if (d < closestDist) {
-                                closestDist = d;
+                            if (distToTrack < closestDist) {
+                                closestDist = distToTrack;
                                 best = &track;
                             }
                         }

@@ -150,8 +150,8 @@ void AegisEngine::SpawnScenarioUnits() {
 }
 
 void AegisEngine::ProcessInput() {
-    if (IsKeyPressed(KEY_UP)) timeScale *= 10.0f;
-    if (IsKeyPressed(KEY_DOWN)) timeScale /= 10.0f;
+    if (IsKeyPressed(KEY_UP)) timeScale *= 2.0f;
+    if (IsKeyPressed(KEY_DOWN)) timeScale /= 2.0f;
     if (timeScale < 1.0f) timeScale = 1.0f;
     if (timeScale > 10000.0f) timeScale = 10000.0f;
 
