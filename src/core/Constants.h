@@ -20,18 +20,16 @@ constexpr float MATH_PI = 3.14159265f;
 constexpr float RAD_TO_DEG = 180.0f / MATH_PI;
 constexpr float DEG_TO_RAD = MATH_PI / 180.0f;
 
-constexpr float LOS_CHECK_STEP_SIZE_PX = 5.0f;
-
 // Track
-constexpr float TRACK_CORRELATION_GATE_PX = 15.0f;
+constexpr float TRACK_CORRELATION_GATE_NM_SQ = 0.1f * 0.1f;
 constexpr float TRACK_STALE_TIMEOUT_SEC = 5.0f; // todo:  5 Seconds for now, Change to 10-30 seconds later, dont fire at the track until we physically detect it again
 constexpr float TRACK_FILTER_ALPHA_MISSILES = 0.85f;
 constexpr float TRACK_FILTER_ALPHA_SHIPS = 0.5f;
 
 // Datalink
 constexpr float DATALINK_TIMEOUT_SEC = 5.0f;
-constexpr float DATALINK_MISSILE_CORRELATION_PX = 50.0f;
-constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 2.0f;
+constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.25f;
+constexpr float MIDCOURSE_LOST_TIMEOUT_SEC = 5.0f;
 
 // Missile
 constexpr float SEEKER_ACTIVATION_SPEED_KNOTS = 400.0f;

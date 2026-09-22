@@ -54,7 +54,6 @@ public:
                         seeker->timeSinceLastCorrelation = 0.0f;
                     } else {
                         seeker->timeSinceLastCorrelation += deltaTime;
-                        constexpr float MIDCOURSE_LOST_TIMEOUT_SEC = 30.0f; // Todo: Make this a global variable
                         if (seeker->timeSinceLastCorrelation > MIDCOURSE_LOST_TIMEOUT_SEC) {
                             seeker->phase = GuidancePhase::INERTIAL_BLIND;
                         }
@@ -183,13 +182,36 @@ public:
                     }
                 }
                 else if (seeker->phase == GuidancePhase::INERTIAL_BLIND) {
-                    MathUtils::Vec2 toIntercept = MathUtils::Sub(seeker->targetPos, trans.pos);
-                    float dist = MathUtils::Length(toIntercept);
-                    if (dist > 0.001f) {
-                        kin.headingVector = MathUtils::Scale(toIntercept, 1.0f / dist);
+                    seeker->timeSinceLastCorrelation += deltaTime;
+
+                    float distToTargetNM = MathUtils::GetDistance(trans.pos, seeker->targetPos);
+
+                    if (distToTargetNM > 0.001f) {
+                        MathUtils::Vec2 desiredHeading = MathUtils::Scale(
+                            MathUtils::Sub(seeker->targetPos, trans.pos), 1.0f / distToTargetNM);
+
+                        float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
+                        float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
+                        float angleDiff = MathUtils::GetShortestAngleDiff(currentAngle, desiredAngle);
+
+                        float maxStep = MAX_MISSILE_TURN_RATE_DEG_SEC * deltaTime;
+                        float clampedStep = std::clamp(angleDiff, -maxStep, maxStep);
+
+                        float newAngle = currentAngle + clampedStep;
+                        kin.headingVector.x = std::cos(newAngle * DEG_TO_RAD);
+                        kin.headingVector.y = std::sin(newAngle * DEG_TO_RAD);
+                    }
+
+                    constexpr float INERTIAL_ARRIVAL_NM = 0.5f;
+                    constexpr float INERTIAL_MAX_FLIGHT_SEC = 20.0f; // hard cap once fully blind
+                    if (distToTargetNM < INERTIAL_ARRIVAL_NM || seeker->timeSinceLastCorrelation > INERTIAL_MAX_FLIGHT_SEC) {
+                        kin.isDead = true;
+                        if (auto* warhead = registry.try_get<Warhead>(entity)) {
+                            float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+                            MetricsLogger::Log(simTime, "CRASH", (uint32_t)warhead->shooter, 0, warhead->weaponId, 0.0f, "SELF_DESTRUCT_INERTIAL_LOST");
+                        }
                     }
                 }
-                continue;
             }
 
             // =====================
@@ -520,11 +542,13 @@ public:
 
                 for (const auto& ping : newPings) {
                     bool matched = false;
-                    float closestDistSq = 4.0f;
+                    float closestDistSq = TRACK_CORRELATION_GATE_NM_SQ;
                     int bestMatchIndex = -1;
 
                     for (size_t i = 0; i < myTracks.size(); ++i) {
-                        float dSq = MathUtils::LengthSq(MathUtils::Sub(ping.pos, myTracks[i].pos));
+                        MathUtils::Vec2 predictedPos = MathUtils::Add(myTracks[i].pos, MathUtils::Scale(myTracks[i].vel, timeDelta));
+
+                        float dSq = MathUtils::LengthSq(MathUtils::Sub(ping.pos, predictedPos));
                         if (dSq < closestDistSq) {
                             closestDistSq = dSq;
                             bestMatchIndex = i;

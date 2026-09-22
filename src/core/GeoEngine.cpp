@@ -122,6 +122,7 @@ bool MapProjection::HasLineOfSight(MathUtils::Vec2 startNM, MathUtils::Vec2 endN
     float dx = endPx.x - startPx.x;
     float dy = endPx.y - startPx.y;
     float dist = std::sqrt(dx * dx + dy * dy);
+    constexpr float LOS_CHECK_STEP_SIZE_PX = 5.0f;
 
     int steps = (int)(dist / LOS_CHECK_STEP_SIZE_PX);
     if (steps < 2) return true;
