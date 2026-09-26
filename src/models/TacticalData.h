@@ -38,6 +38,7 @@ struct MissileStats {
     float burnRateKgSec;
     float warheadYield;
     float lethalRadiusNM;
+    float maxLateralGs;
 };
 
 struct ShipStats {

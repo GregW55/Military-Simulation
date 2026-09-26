@@ -1,5 +1,6 @@
 #pragma once
 #include <cmath>
+#include "GeoEngine.h"
 
 /* DO NOT MODIFY ANY VARIABLES IN THIS FILE
  * ALL VARIABLES ARE PHYSICS CONSTANTS

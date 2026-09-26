@@ -30,12 +30,11 @@ constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.25f;
 
 // Missile
 constexpr float LAUNCH_SPEED_FRACTION = 0.15f; // leaves rail at ~15% of max speed, then accelerates under thrust
-constexpr float DESCENT_TRIGGER_TIME_SEC = 10.0f; // Todo: Add this as an on-launch calculation, difference between target altitude and cruise altitude and how many seconds it will take us to travel vertically that altitude
 constexpr float SEEKER_FOV_DEGREES = 45.0f;
 constexpr float SEEKER_IDENTITY_GATE_NM = 1.5f;
 constexpr float FUSE_ALTITUDE_TOLERANCE_METERS = 50.0f;
 constexpr float MIN_TIME_BEFORE_SEEKER_ACTIVATION_SEC = 0.75f; // brief separation/boost phase
-constexpr float TERMINAL_DIVE_RANGE_NM = 2.0f;  // Todo: maybe make this calculated math instead of constant
+constexpr float DESCENT_SAFETY_MARGIN_SEC = 2.5f; // small buffer so it doesn't cut it razor-thin
 
 // Ships
 constexpr float MIN_ENGAGEMENT_RANGE_NM = 0.5f;
@@ -43,7 +42,7 @@ constexpr float MIN_ENGAGEMENT_RANGE_NM = 0.5f;
 // Speed thresholds that separate contact/threat types
 // Threat assessment used to determine what the entity is (It must be X thing, depending on how fast it achieves)
 constexpr float MAX_SHIP_SPEED_KTS = 50.0f; // Maximum speed an entity could go before being reclassified as UNKNOWN
-constexpr float MIN_MISSILE_SPEED_KTS = 350.0f; // Once an entity reaches this threshold its reclassified as MISSILE
+constexpr float MIN_MISSILE_SPEED_KTS = 250.0f; // Once an entity reaches this threshold its reclassified as MISSILE
 constexpr float MIN_AIRCRAFT_SPEED_KTS = 150.0f; // Once an entity reaches this threshold its reclassified as AIRCRAFT
 
 // Physics

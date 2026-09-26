@@ -16,7 +16,8 @@
       "max_fuel_kg": 0.0,
       "burn_rate_kg_sec": 0.0,
       "warhead_yield": 0.0,
-      "lethal_radius_nm": 0.0
+      "lethal_radius_nm": 0.0,
+      "max_lateral_gs": 0.0
     },
     "SM_6": {
       "name": "SM-6 ERAM",
@@ -34,7 +35,8 @@
       "max_fuel_kg": 550.0,
       "burn_rate_kg_sec": 55.0,
       "warhead_yield": 100.0,
-      "lethal_radius_nm": 0.05
+      "lethal_radius_nm": 0.05,
+      "max_lateral_gs": 25.0
     },
     "SM_2": {
       "name": "SM-2 Block III",
@@ -52,7 +54,8 @@
       "max_fuel_kg": 250.0,
       "burn_rate_kg_sec": 25.0,
       "warhead_yield": 90.0,
-      "lethal_radius_nm": 0.04
+      "lethal_radius_nm": 0.04,
+      "max_lateral_gs": 20.0
     },
     "ESSM": {
       "name": "RIM-162 ESSM",
@@ -70,7 +73,8 @@
       "max_fuel_kg": 110.0,
       "burn_rate_kg_sec": 15.0,
       "warhead_yield": 60.0,
-      "lethal_radius_nm": 0.03
+      "lethal_radius_nm": 0.03,
+      "max_lateral_gs": 30.0
     },
     "TOMAHAWK": {
       "name": "BGM-109 Tomahawk",
@@ -88,7 +92,8 @@
       "max_fuel_kg": 450.0,
       "burn_rate_kg_sec": 0.07,
       "warhead_yield": 700.0,
-      "lethal_radius_nm": 0.08
+      "lethal_radius_nm": 0.08,
+      "max_lateral_gs": 4.0
     },
     "YJ_18": {
       "name": "YJ-18 ASCM",
@@ -99,14 +104,15 @@
       "seeker_range_nm": 20.0,
       "is_interceptor": false,
       "rcs_sqm": 0.1,
-      "cruise_altitude_m": 30.0,
+      "cruise_altitude_m": 10.0,
       "mass_kg": 2000.0,
       "area_m2": 0.221,
       "thrust_newtons": 155000.0,
       "max_fuel_kg": 500.0,
       "burn_rate_kg_sec": 25.0,
       "warhead_yield": 300.0,
-      "lethal_radius_nm": 0.06
+      "lethal_radius_nm": 0.06,
+      "max_lateral_gs": 6.0
     },
     "HHQ_9": {
       "name": "HHQ-9",
@@ -124,7 +130,8 @@
       "max_fuel_kg": 455.0,
       "burn_rate_kg_sec": 45.0,
       "warhead_yield": 150.0,
-      "lethal_radius_nm": 0.05
+      "lethal_radius_nm": 0.05,
+      "max_lateral_gs": 25.0
     }
   },
   "ships": {

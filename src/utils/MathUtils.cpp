@@ -1,4 +1,5 @@
 #include "MathUtils.h"
+#include "../core/Physics.h"
 #include <algorithm>
 #include "../core/Constants.h"
 #include <cmath>
@@ -26,6 +27,15 @@ namespace MathUtils {
 
     float GetShortestAngleDiff(float current, float target) {
         return WrapAngle(target - current);
+    }
+
+    float GetMaxTurnRateDegSec(float speedKnots, float maxLateralGs) {
+        float speedMps = speedKnots * MPS_PER_KNOT;
+        if (speedMps < 1.0f) return 0.0;
+
+        float maxLateralAccelMps2 = maxLateralGs * Physics::GRAVITY;
+        float maxTurnRateRadSec = maxLateralAccelMps2 / speedMps;  // a = v * ω  →  ω = a / v
+        return maxTurnRateRadSec * RAD_TO_DEG;
     }
 
     float GetRadarHorizonNM(float altitudeMeters) {

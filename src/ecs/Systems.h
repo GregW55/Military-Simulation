@@ -9,7 +9,6 @@
 #include <random>
 
 constexpr bool VERBOSE_COMBAT_LOG = false;
-constexpr float MAX_MISSILE_TURN_RATE_DEG_SEC = 25.0f; // todo: calculate based on actual missile
 
 class Systems {
 public:
@@ -73,7 +72,8 @@ public:
                         float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
                         float angleDiff = MathUtils::GetShortestAngleDiff(currentAngle, desiredAngle);
 
-                        float maxStep = MAX_MISSILE_TURN_RATE_DEG_SEC * deltaTime;
+                        float maxTurnRateDeg = MathUtils::GetMaxTurnRateDegSec(kin.currentSpeedKnots, seeker->maxLateralGs);
+                        float maxStep = maxTurnRateDeg * deltaTime;
                         float clampedStep = std::clamp(angleDiff, -maxStep, maxStep);
 
                         float newAngle = currentAngle + clampedStep;
@@ -132,10 +132,12 @@ public:
                     }
 
                     if (foundCorrelatedTrack) {
+                        float maxTurnRateDeg = MathUtils::GetMaxTurnRateDegSec(kin.currentSpeedKnots, seeker->maxLateralGs);
+
                         float turnRateDeg = MathUtils::CalculateProNavTurnRate(
                             trans.pos, kin.velocity, seeker->targetPos, seeker->targetVel, 4.0f
                         );
-                        turnRateDeg = std::clamp(turnRateDeg, -MAX_MISSILE_TURN_RATE_DEG_SEC, MAX_MISSILE_TURN_RATE_DEG_SEC);
+                        turnRateDeg = std::clamp(turnRateDeg, -maxTurnRateDeg, maxTurnRateDeg);
 
                         float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
                         currentAngle += (turnRateDeg * deltaTime);
@@ -144,8 +146,7 @@ public:
                     } else {
                         seeker->timeSinceLastCorrelation += deltaTime;
 
-                        constexpr float SEARCH_GRACE_PERIOD_SEC = 4.0f; // Todo: Make this a global variable
-                        if (seeker->timeSinceLastCorrelation > SEARCH_GRACE_PERIOD_SEC) {
+                        if (seeker->timeSinceLastCorrelation > DATALINK_TIMEOUT_SEC) {
                             // Grace period expired - try network retarget before giving up
                             bool missileIsHostile = registry.get<IFF>(entity).isHostile;
                             RadarTrack* bestNetworkTarget = nullptr;
@@ -194,7 +195,8 @@ public:
                         float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
                         float angleDiff = MathUtils::GetShortestAngleDiff(currentAngle, desiredAngle);
 
-                        float maxStep = MAX_MISSILE_TURN_RATE_DEG_SEC * deltaTime;
+                        float maxTurnRateDeg = MathUtils::GetMaxTurnRateDegSec(kin.currentSpeedKnots, seeker->maxLateralGs);
+                        float maxStep = maxTurnRateDeg * deltaTime;
                         float clampedStep = std::clamp(angleDiff, -maxStep, maxStep);
 
                         float newAngle = currentAngle + clampedStep;
@@ -388,23 +390,59 @@ public:
                 float targetAlt = aero->cruiseAltitudeMeters < 100.0f ? 10000.0f : aero->cruiseAltitudeMeters;
 
                 if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
-                    float distToTarget = MathUtils::GetDistance(transform.pos, seeker->targetPos);
-                    float currentSpeedNmSec = MathUtils::KnotsToNmPerSec(kin.currentSpeedKnots);
+                    MathUtils::Vec2 toTarget = MathUtils::Sub(seeker->targetPos, transform.pos);
+                    float distToTargetNM = MathUtils::Length(toTarget);
 
-                    bool shouldDescend = (currentSpeedNmSec > 0.0001f) && (distToTarget / currentSpeedNmSec < DESCENT_TRIGGER_TIME_SEC);
+                    if (distToTargetNM > 0.001f) {
+                        MathUtils::Vec2 toTargetDir = MathUtils::Scale(toTarget, 1.0f / distToTargetNM);
 
-                    if (shouldDescend || seeker->phase == GuidancePhase::TERMINAL_PITBULL) {
-                        targetAlt = seeker->targetAltitude;
+                        // Missile's own closing speed toward the target
+                        float missileClosingSpeedNmSec = MathUtils::KnotsToNmPerSec(kin.currentSpeedKnots)
+                            * MathUtils::Dot(kin.headingVector, toTargetDir);
+
+                        // Target's closing speed toward the missile (positive if closing, negative if receding)
+                        MathUtils::Vec2 targetToMissileDir = MathUtils::Scale(toTarget, -1.0f / distToTargetNM);
+                        float targetClosingSpeedNmSec = MathUtils::Dot(seeker->targetVel, targetToMissileDir);
+
+                        float combinedClosingSpeedNmSec = missileClosingSpeedNmSec + targetClosingSpeedNmSec;
+
+                        if (combinedClosingSpeedNmSec > 0.0001f) {
+                            float timeToImpactSec = distToTargetNM / combinedClosingSpeedNmSec;
+
+                            float altDiffMeters = std::abs(seeker->targetAltitude - transform.altitude);
+                            float maxLateralAccelMps2 = seeker->maxLateralGs * Physics::GRAVITY;
+
+                            float timeToDescendSec = 0.0f;
+                            if (maxLateralAccelMps2 > 0.0f) {
+                                float peakVerticalSpeedMps = std::sqrt(2.0f * maxLateralAccelMps2 * altDiffMeters);
+                                peakVerticalSpeedMps = std::min(peakVerticalSpeedMps, kin.currentSpeedKnots * MPS_PER_KNOT);
+                                timeToDescendSec = peakVerticalSpeedMps / maxLateralAccelMps2; // t = v/a, kinematically the time to complete that speed-to-zero descent
+                            }
+
+                            if (timeToImpactSec <= (timeToDescendSec + DESCENT_SAFETY_MARGIN_SEC)) {
+                                targetAlt = seeker->targetAltitude;
+                            }
+                        }
                     }
                 }
 
-                float verticalSpeed = 500.0f * deltaTime;
+                float altDiff = targetAlt - transform.altitude;
+                float speedMps = kin.currentSpeedKnots * MPS_PER_KNOT;
+
+                float maxLateralAccelMps2 = 0.0f;
+                if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
+                    maxLateralAccelMps2 = seeker->maxLateralGs * Physics::GRAVITY;
+                }
+                float maxVerticalSpeedMps = (maxLateralAccelMps2 > 0.0f)
+                    ? std::sqrt(2.0f * maxLateralAccelMps2 * std::abs(altDiff))
+                    : 0.0f;
+                maxVerticalSpeedMps = std::min(maxVerticalSpeedMps, speedMps);
+
+                float verticalSpeed = maxVerticalSpeedMps * deltaTime;
                 if (transform.altitude < targetAlt) {
-                    transform.altitude += verticalSpeed;
-                    if (transform.altitude > targetAlt) transform.altitude = targetAlt;
+                    transform.altitude = std::min(transform.altitude + verticalSpeed, targetAlt);
                 } else if (transform.altitude > targetAlt) {
-                    transform.altitude -= verticalSpeed;
-                    if (transform.altitude < targetAlt) transform.altitude = targetAlt;
+                    transform.altitude = std::max(transform.altitude - verticalSpeed, targetAlt);
                 }
 
                 if (aero->currentFuelKg > 0.0f) {
@@ -419,7 +457,6 @@ public:
                     aero->lastCachedAltitude = transform.altitude;
                 }
 
-                float speedMps = kin.currentSpeedKnots * MPS_PER_KNOT;
                 float machNumber = speedMps / aero ->cachedSpeedOfSound;
 
                 float dragCoeff = DRAG_COEFF_SUBSONIC;
@@ -941,7 +978,10 @@ private:
             target.pos,
             target.vel,
             target.altitude,
-            mStats.isInterceptor
+            mStats.isInterceptor,
+            0.0f, // Time since last correlation
+            0.0f, // Time since launch (Seconds)
+            mStats.maxLateralGs
         );
         registry.emplace<Transform2D>(missile,
             shooterTransform.pos, shooterTransform.altitude, shooterTransform.heading);

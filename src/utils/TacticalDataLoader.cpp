@@ -71,6 +71,7 @@ void TacticalDataLoader::Load(const std::string &filepath) {
         m.burnRateKgSec = LoadFloat(val, "burn_rate_kg_sec", 25.0f, key);
         m.warheadYield = LoadFloat(val, "warhead_yield", 100.0f, key);
         m.lethalRadiusNM = LoadFloat(val, "lethal_radius_nm", 0.05f, key);
+        m.maxLateralGs = LoadFloat(val, "max_lateral_gs", 10.0f, key);
 
         // Save to the master database
         TacticalDatabase::missiles[key] = m;

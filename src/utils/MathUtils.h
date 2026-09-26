@@ -40,6 +40,7 @@ namespace MathUtils {
     // --- Navigation & Angles ---
     float WrapAngle(float angle);
     float GetShortestAngleDiff(float current, float target);
+    float GetMaxTurnRateDegSec(float speedKnots, float maxLateralGs);
 
     // --- Physics & Geometry ---
     float GetRadarHorizonNM(float altitudeMeters);
