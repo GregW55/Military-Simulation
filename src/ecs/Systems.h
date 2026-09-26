@@ -764,8 +764,10 @@ public:
                 MathUtils::Vec2 diff = MathUtils::Sub(mTrans.pos, tTrans.pos);
                 float distNmSq = MathUtils::LengthSq(diff);
 
+                float altDiffMeters = std::abs(mTrans.altitude - tTrans.altitude);
+
                 // DETONATION SEQUENCE
-                if (distNmSq <= warhead.lethalRadiusNmSq) {
+                if (distNmSq <= warhead.lethalRadiusNmSq && altDiffMeters <= FUSE_ALTITUDE_TOLERANCE_METERS) {
 
                     // --- DYNAMIC PK CALCULATION ---
                     float dynamicPk = warhead.baseReliability;
@@ -837,8 +839,9 @@ public:
 
                 auto& oTrans = missiles.get<Transform2D>(otherMissile);
                 float distNmSq = MathUtils::LengthSq(MathUtils::Sub(mTrans.pos, oTrans.pos));
+                float altDiffMeters = std::abs(mTrans.altitude - oTrans.altitude);
 
-                if (distNmSq <= INTERCEPT_KILL_RADIUS_NM * INTERCEPT_KILL_RADIUS_NM) {
+                if (distNmSq <= warhead.lethalRadiusNmSq) {
                     float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
                     auto& otherWarhead = missiles.get<Warhead>(otherMissile);
 
@@ -946,9 +949,14 @@ private:
         registry.emplace<Transform2D>(missile,
             shooterTransform.pos, shooterTransform.altitude, shooterTransform.heading);
 
+        float launchSpeedKnots = mStats.maxSpeedKnots * LAUNCH_SPEED_FRACTION;
         registry.emplace<Kinematics>(missile,
-            shooterKin.velocity, initialHeading,
-            mStats.maxSpeedKnots, 600.0f, mStats.maxSpeedKnots, 50.0f);
+            shooterKin.velocity,  // velocity
+            initialHeading,    // headingVector
+            mStats.maxSpeedKnots, // maxSpeedKnots
+            launchSpeedKnots,  // currentSpeedKnots
+            mStats.maxSpeedKnots, // desiredSpeedKnots
+            50.0f);               // accelerationRate
 
         registry.emplace<Aerodynamics>(missile,
             mStats.massKg, 1.0f / mStats.massKg, mStats.areaM2,

@@ -211,7 +211,7 @@ void AegisEngine::Render() {
             Color c = iff.isHostile ? RED : BLUE;
             DrawCircleV({screenPos.x, screenPos.y}, 5.0f, c);
 
-            bool isHovered = MathUtils::GetDistance(mPos, screenPos) < 4.0f;
+            bool isHovered = MathUtils::GetDistance(mPos, screenPos) < 2.0f;
 
             if (isHovered && kin) {
                 std::string tooltip = TextFormat("Alt: %.1fm\nSpd: %.1f kts", transform.altitude, kin->currentSpeedKnots);

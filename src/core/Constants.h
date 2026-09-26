@@ -32,12 +32,13 @@ constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.25f;
 constexpr float MIDCOURSE_LOST_TIMEOUT_SEC = 5.0f;
 
 // Missile
+constexpr float LAUNCH_SPEED_FRACTION = 0.15f; // leaves rail at ~15% of max speed, then accelerates under thrust
 constexpr float SEEKER_ACTIVATION_SPEED_KNOTS = 400.0f;
 constexpr float SEEKER_FOV_DEGREES = 45.0f;
 constexpr float SEEKER_IDENTITY_GATE_NM = 1.5f;
+constexpr float FUSE_ALTITUDE_TOLERANCE_METERS = 50.0f;
 constexpr float MIN_TIME_BEFORE_SEEKER_ACTIVATION_SEC = 0.75f; // brief separation/boost phase
-constexpr float TERMINAL_DIVE_RANGE_NM = 1.0f;  // Todo: maybe make this calculated math instead of constant
-constexpr float INTERCEPT_KILL_RADIUS_NM = 0.05f; // Aprox. 300ft
+constexpr float TERMINAL_DIVE_RANGE_NM = 2.0f;  // Todo: maybe make this calculated math instead of constant
 constexpr float WAYPOINT_REACHED_DISTANCE_NM = 0.5f;
 
 // Ships
