@@ -861,10 +861,7 @@ public:
         }
     }
 private:
-    // Select the best weapon for a given threat type
     static std::string SelectWeapon(const Magazine& mag, const RadarTrack& threat) {
-        // Priority order depends on threat class
-        // Missiles need interceptors; ships need anti-ship missiles
 
         bool needInterceptor = (threat.classification == ThreatClass::MISSILE_INBOUND ||
                                 threat.classification == ThreatClass::AIRCRAFT);

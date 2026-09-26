@@ -4,7 +4,7 @@
 
 namespace ThreatAnalysis {
     inline ThreatClass Classify(float speedKnots, float altitude) {
-        if (speedKnots >= MIN_MISSILE_SPEED_KTS && altitude < 500.0f) {
+        if (speedKnots >= MIN_MISSILE_SPEED_KTS || altitude > 5000.0f) {
             return ThreatClass::MISSILE_INBOUND;
         }
         if (speedKnots >= MIN_AIRCRAFT_SPEED_KTS) {

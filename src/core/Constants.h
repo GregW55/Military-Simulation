@@ -30,7 +30,7 @@ constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.25f;
 
 // Missile
 constexpr float LAUNCH_SPEED_FRACTION = 0.15f; // leaves rail at ~15% of max speed, then accelerates under thrust
-constexpr float DESCENT_TRIGGER_TIME_SEC = 7.5f; // Todo: Add this as an on-launch calculation, difference between target altitude and cruise altitude and how many seconds it will take us to travel vertically that altitude
+constexpr float DESCENT_TRIGGER_TIME_SEC = 10.0f; // Todo: Add this as an on-launch calculation, difference between target altitude and cruise altitude and how many seconds it will take us to travel vertically that altitude
 constexpr float SEEKER_FOV_DEGREES = 45.0f;
 constexpr float SEEKER_IDENTITY_GATE_NM = 1.5f;
 constexpr float FUSE_ALTITUDE_TOLERANCE_METERS = 50.0f;
