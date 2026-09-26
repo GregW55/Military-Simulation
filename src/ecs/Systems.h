@@ -54,7 +54,7 @@ public:
                         seeker->timeSinceLastCorrelation = 0.0f;
                     } else {
                         seeker->timeSinceLastCorrelation += deltaTime;
-                        if (seeker->timeSinceLastCorrelation > MIDCOURSE_LOST_TIMEOUT_SEC) {
+                        if (seeker->timeSinceLastCorrelation > DATALINK_TIMEOUT_SEC) {
                             seeker->phase = GuidancePhase::INERTIAL_BLIND;
                         }
                     }
@@ -389,12 +389,12 @@ public:
 
                 if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
                     float distToTarget = MathUtils::GetDistance(transform.pos, seeker->targetPos);
-                    if (distToTarget < 5.0f) {
-                        if (seeker->isInterceptor) {
-                            targetAlt = seeker->targetAltitude;
-                        } else {
-                            targetAlt = 10.0f;
-                        }
+                    float currentSpeedNmSec = MathUtils::KnotsToNmPerSec(kin.currentSpeedKnots);
+
+                    bool shouldDescend = (currentSpeedNmSec > 0.0001f) && (distToTarget / currentSpeedNmSec < DESCENT_TRIGGER_TIME_SEC);
+
+                    if (shouldDescend || seeker->phase == GuidancePhase::TERMINAL_PITBULL) {
+                        targetAlt = seeker->targetAltitude;
                     }
                 }
 
