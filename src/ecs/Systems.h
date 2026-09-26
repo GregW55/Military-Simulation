@@ -841,7 +841,7 @@ public:
                 float distNmSq = MathUtils::LengthSq(MathUtils::Sub(mTrans.pos, oTrans.pos));
                 float altDiffMeters = std::abs(mTrans.altitude - oTrans.altitude);
 
-                if (distNmSq <= warhead.lethalRadiusNmSq) {
+                if (distNmSq <= warhead.lethalRadiusNmSq && altDiffMeters <= FUSE_ALTITUDE_TOLERANCE_METERS) {
                     float simTime = registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
                     auto& otherWarhead = missiles.get<Warhead>(otherMissile);
 
