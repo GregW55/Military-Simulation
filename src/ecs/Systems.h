@@ -121,8 +121,7 @@ public:
                             }
                         }
 
-                        constexpr float TRACK_FRESHNESS_THRESHOLD_SEC = 1.0f; // must have refreshed recently to count as a real lock
-                        if (best && closestDist < seeker->rangeNM && best->ageSec < TRACK_FRESHNESS_THRESHOLD_SEC) {
+                        if (best && closestDist < seeker->rangeNM && best->ageSec < TRACK_STALE_TIMEOUT_SEC) {
                             seeker->targetPos = best->pos;
                             seeker->targetVel = best->vel;
                             seeker->targetAltitude = best->altitude;
@@ -157,8 +156,7 @@ public:
                             for (auto observer : radarShips) {
                                 if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
                                 for (auto& track : networkDetectionData.activeTracks[observer]) {
-                                    constexpr float TRACK_FRESHNESS_THRESHOLD_SEC = 1.0f;
-                                    if (track.ageSec > TRACK_FRESHNESS_THRESHOLD_SEC) continue;
+                                    if (track.ageSec > TRACK_STALE_TIMEOUT_SEC) continue;
                                     if (track.consistentObservationSec < 1.0f) continue;
                                     if (track.threatScore > bestScore) {
                                         bestScore = track.threatScore;
@@ -697,7 +695,7 @@ public:
 
             // --- Evaluate each threat and decide ---
             for (RadarTrack* threat : sortedThreats) {
-                // Also add a distance check / threat check (cannot wait 2 seconds if a missile will hit us in 1)
+                // todo: Also add a distance check / threat check (cannot wait 2 seconds if a missile will hit us in 1)
                 if (threat->consistentObservationSec < 2.0f) continue; // Hard coded confirmation for now
 
                 // DOCTRINE RULE 2: Select the right weapon for this target
