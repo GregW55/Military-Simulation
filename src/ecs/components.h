@@ -153,6 +153,7 @@ struct SeekerHead {
     float timeSinceLastCorrelation = 0.0f;
     float timeSinceLaunchSec = 0.0f;
     float maxLateralGs = 0.0f;
+    bool hasLiveTarget = true;
 };
 
 // What weapons are currently loaded, and can we fire
