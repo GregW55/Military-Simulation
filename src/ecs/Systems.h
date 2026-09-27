@@ -121,7 +121,7 @@ public:
                             }
                         }
 
-                        if (best && closestDist < seeker->rangeNM && best->ageSec < TRACK_STALE_TIMEOUT_SEC) {
+                        if (best && closestDist < seeker->rangeNM && best->ageSec < TRACK_ACTIONABLE_FRESHNESS_SEC) {
                             seeker->targetPos = best->pos;
                             seeker->targetVel = best->vel;
                             seeker->targetAltitude = best->altitude;
@@ -156,7 +156,7 @@ public:
                             for (auto observer : radarShips) {
                                 if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
                                 for (auto& track : networkDetectionData.activeTracks[observer]) {
-                                    if (track.ageSec > TRACK_STALE_TIMEOUT_SEC) continue;
+                                    if (track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) continue;
                                     if (track.consistentObservationSec < 1.0f) continue;
                                     if (track.threatScore > bestScore) {
                                         bestScore = track.threatScore;
@@ -529,7 +529,7 @@ public:
                 it = detectionData.activeTracks.erase(it);
             } else {
                 for (auto& track : it->second) track.ageSec += deltaTime;
-                std::erase_if(it->second, [](const RadarTrack& t) { return t.ageSec > TRACK_STALE_TIMEOUT_SEC; });
+                std::erase_if(it->second, [](const RadarTrack& t) { return t.ageSec > TRACK_DELETION_TIMEOUT_SEC; });
                 ++it;
             }
         }
@@ -695,8 +695,7 @@ public:
 
             // --- Evaluate each threat and decide ---
             for (RadarTrack* threat : sortedThreats) {
-                // todo: Also add a distance check / threat check (cannot wait 2 seconds if a missile will hit us in 1)
-                if (threat->consistentObservationSec < 2.0f) continue; // Hard coded confirmation for now
+                if (threat->ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) continue;
 
                 // DOCTRINE RULE 2: Select the right weapon for this target
                 std::string selectedWeapon = SelectWeapon(mag, *threat);
