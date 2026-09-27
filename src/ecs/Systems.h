@@ -112,7 +112,11 @@ public:
 
                             if (angleFromHeadingDeg > SEEKER_FOV_DEGREES) continue; // Outside seeker's cone, can't see it
 
-                            float distFromAssignedTarget = MathUtils::GetDistance(seeker->targetPos, track.pos);
+                            float timeSinceAssignedTargetUpdateSec = seeker->timeSinceLastCorrelation;
+                            MathUtils::Vec2 predictedAssignedTargetPos = MathUtils::Add(
+                                seeker->targetPos, MathUtils::Scale(seeker->targetVel, timeSinceAssignedTargetUpdateSec));
+
+                            float distFromAssignedTarget = MathUtils::GetDistance(predictedAssignedTargetPos, track.pos);
                             if (distFromAssignedTarget > SEEKER_IDENTITY_GATE_NM) continue;
 
                             if (distToTrack < closestDist) {
@@ -695,6 +699,7 @@ public:
 
             // --- Evaluate each threat and decide ---
             for (RadarTrack* threat : sortedThreats) {
+                if (threat->consistentObservationSec < 2.0f) continue; // require stable, multi-scan-confirmed data before firing
                 if (threat->ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) continue;
 
                 // DOCTRINE RULE 2: Select the right weapon for this target

@@ -33,7 +33,7 @@ constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.25f;
 // Missile
 constexpr float LAUNCH_SPEED_FRACTION = 0.15f; // leaves rail at ~15% of max speed, then accelerates under thrust
 constexpr float SEEKER_FOV_DEGREES = 45.0f;
-constexpr float SEEKER_IDENTITY_GATE_NM = 0.05f;
+constexpr float SEEKER_IDENTITY_GATE_NM = 0.15f; // Anything lower may cause tracks to constantly be lost
 constexpr float FUSE_ALTITUDE_TOLERANCE_METERS = 50.0f;
 constexpr float MIN_TIME_BEFORE_SEEKER_ACTIVATION_SEC = 0.75f; // brief separation/boost phase
 constexpr float DESCENT_SAFETY_MARGIN_SEC = 2.5f; // small buffer so it doesn't cut it razor-thin
