@@ -12,6 +12,10 @@ constexpr bool VERBOSE_COMBAT_LOG = true;
 
 class Systems {
 public:
+    static float GetSimTime(entt::registry& registry) {
+        return registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+    }
+
     // --- NAVIGATION SYSTEM  ---
     static void NavigationSystem(entt::registry& registry, float deltaTime) {
         auto view = registry.view<Transform2D, Kinematics>();
@@ -233,23 +237,30 @@ public:
                 auto* myRadar = registry.try_get<RadarEmitter>(entity);
                 if (!myRadar) continue;
 
-                brain->targetingCooldown -= deltaTime;
+                auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[entity];
 
-                if (brain->targetingCooldown <= 0.0f) {
-                    brain->targetingCooldown = 2.0f;
-                    brain->hasTarget = false;
+                RadarTrack* bestTrack = nullptr;
+                float bestDistSq = std::numeric_limits<float>::max();
 
-                    auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[entity];
-                    float closestDistSq = std::numeric_limits<float>::max();
+                for (auto& track : myTracks) {
+                    if (track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC)
+                        continue;
 
-                    for (auto& track : myTracks) {
-                        float distSq = MathUtils::LengthSq(MathUtils::Sub(trans.pos, track.pos));
-                        if (distSq < closestDistSq) {
-                            closestDistSq = distSq;
-                            brain->cachedTargetPos = track.pos;
-                            brain->hasTarget = true;
-                        }
+                    float distSq = MathUtils::LengthSq(
+                        MathUtils::Sub(trans.pos, track.pos)
+                    );
+
+                    if (distSq < bestDistSq) {
+                        bestDistSq = distSq;
+                        bestTrack = &track;
                     }
+                }
+
+                if (bestTrack) {
+                    brain->cachedTargetPos = bestTrack->pos;
+                    brain->hasTarget = true;
+                } else {
+                    brain->hasTarget = false;
                 }
 
                 float closestDist = MathUtils::GetDistance(trans.pos, brain->cachedTargetPos);
@@ -589,38 +600,79 @@ public:
 
                 for (const auto& ping : newPings) {
                     bool matched = false;
-                    float closestDistSq = TRACK_CORRELATION_GATE_NM_SQ;
                     int bestMatchIndex = -1;
+                    float bestMatchDistSq = std::numeric_limits<float>::max();
 
                     for (size_t i = 0; i < myTracks.size(); ++i) {
-                        MathUtils::Vec2 predictedPos = MathUtils::Add(myTracks[i].pos, MathUtils::Scale(myTracks[i].vel, timeDelta));
+                        RadarTrack& track = myTracks[i];
+                        float gateNm;
 
-                        float dSq = MathUtils::LengthSq(MathUtils::Sub(ping.pos, predictedPos));
-                        if (dSq < closestDistSq) {
-                            closestDistSq = dSq;
-                            bestMatchIndex = i;
+                        if (!track.hasVelocity) {
+                            gateNm = TRACK_ACQUISITION_GATE_NM;
+                        } else {
+                            float speedNMPerSec = MathUtils::Length(track.vel);
+
+                            gateNm = TRACK_MIN_CORRELATION_GATE_NM + (speedNMPerSec * speedNMPerSec) * timeDelta;
+
+                            gateNm = std::clamp(
+                                gateNm,
+                                TRACK_MIN_CORRELATION_GATE_NM,
+                                TRACK_MAX_CORRELATION_GATE_NM
+                            );
+                        }
+
+                        MathUtils::Vec2 predictedPos = track.pos;
+
+                        if (track.hasVelocity) {
+                            predictedPos = MathUtils::Add(
+                                track.pos,
+                                MathUtils::Scale(track.vel, timeDelta)
+                            );
+                        }
+
+                        float dSq = MathUtils::LengthSq(
+                            MathUtils::Sub(ping.pos, predictedPos)
+                        );
+
+                        if (dSq <= gateNm * gateNm && dSq < bestMatchDistSq) {
+                            bestMatchDistSq = dSq;
+                            bestMatchIndex = static_cast<int>(i);
                         }
                     }
 
                     constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4000.0f; // Todo: pull from the missile json
                     if (bestMatchIndex != -1) {
-                        MathUtils::Vec2 calculatedVel = MathUtils::Scale(
-                            MathUtils::Sub(ping.pos, myTracks[bestMatchIndex].pos),
-                            1.0f / timeDelta);
+                        RadarTrack& track = myTracks[bestMatchIndex];
 
-                        float derivedSpeedKnots = MathUtils::Length(calculatedVel) * 3600.0f;
-                        if (derivedSpeedKnots > MAX_PLAUSIBLE_SPEED_KNOTS) {
-                            // Treat as a bad/noisy observation — hold last known velocity instead of trusting the spike
-                            calculatedVel = myTracks[bestMatchIndex].vel;
-                            derivedSpeedKnots = myTracks[bestMatchIndex].speedKnots;
+                        MathUtils::Vec2 calculatedVel = track.vel;
+                        float derivedSpeedKnots = track.speedKnots;
+
+                        // We can calculate velocity once we have a previous observation.
+                        if (track.consistentObservationSec >= 1 && timeDelta > 0.0001f) {
+                            calculatedVel = MathUtils::Scale(
+                                MathUtils::Sub(ping.pos, track.pos),
+                                1.0f / timeDelta
+                            );
+
+                            derivedSpeedKnots =
+                                MathUtils::Length(calculatedVel) * 3600.0f;
+
+                            if (derivedSpeedKnots <= MAX_PLAUSIBLE_SPEED_KNOTS) {
+                                track.vel = calculatedVel;
+                                track.speedKnots = derivedSpeedKnots;
+                                track.hasVelocity = true;
+                            }
                         }
-                        // Todo: Maybe make something so if an object continues to go this fast we pick it up as a enemy
 
-                        myTracks[bestMatchIndex].pos = ping.pos;
-                        myTracks[bestMatchIndex].vel = calculatedVel;
-                        myTracks[bestMatchIndex].altitude = ping.altitude;
-                        myTracks[bestMatchIndex].ageSec = 0.0f;
-                        myTracks[bestMatchIndex].speedKnots = derivedSpeedKnots;
+                        track.pos = ping.pos;
+                        track.altitude = ping.altitude;
+                        track.ageSec = 0.0f;
+
+                        // Once we've had two observations, the velocity is real.
+                        if (track.consistentObservationSec >= 2) {
+                            track.hasVelocity = true;
+                        }
+
 
                         MathUtils::Vec2 toObserver = MathUtils::Sub(obsTransform.pos, ping.pos);
                         float dist = MathUtils::Length(toObserver);
@@ -645,10 +697,22 @@ public:
 
                     if (!matched) {
                         RadarTrack newTrack;
+
                         newTrack.pos = ping.pos;
                         newTrack.vel = {0.0f, 0.0f};
-                        newTrack.ageSec = 0.0f;
                         newTrack.altitude = ping.altitude;
+                        newTrack.ageSec = 0.0f;
+
+                        newTrack.hasVelocity = false;
+
+                        newTrack.speedKnots = 0.0f;
+                        newTrack.closingSpeedKnots = 0.0f;
+                        newTrack.timeToImpactSec = -1.0f;
+
+                        newTrack.classification = ThreatClass::UNKNOWN;
+                        newTrack.threatScore = 0.0f;
+                        newTrack.consistentObservationSec = 0.0f;
+
                         newlyDiscoveredTracks.push_back(newTrack);
                     }
                 }
@@ -910,9 +974,6 @@ public:
         }
     }
 private:
-    static float GetSimTime(entt::registry& registry) {
-        return registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
-    }
 
     static std::string SelectWeapon(const Magazine& mag, const RadarTrack& threat) {
 

@@ -177,10 +177,10 @@ void AegisEngine::ProcessInput() {
 }
 
 void AegisEngine::Update(float deltaTime) {
-    Systems::NavigationSystem(registry, deltaTime);
-    Systems::CombatSystem(registry, deltaTime);
     Systems::MovementSystem(registry, deltaTime);
     Systems::RadarSystem(registry, deltaTime);
+    Systems::NavigationSystem(registry, deltaTime);
+    Systems::CombatSystem(registry, deltaTime);
     Systems::ProximityFuseSystem(registry);
 
     auto deadEntities = registry.view<DeadTag>();

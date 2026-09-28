@@ -104,6 +104,8 @@ struct RadarTrack {
     MathUtils::Vec2 vel;
     float altitude = 0.0f;
     float ageSec = 0.0f;
+    bool hasVelocity = false;
+
     float speedKnots       = 0.0f;   // Derived from vel magnitude each update
     float closingSpeedKnots = 0.0f;  // Positive = closing on observer, negative = opening
     float timeToImpactSec  = -1.0f;  // -1 means not on intercept course
