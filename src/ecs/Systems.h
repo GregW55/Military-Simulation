@@ -9,9 +9,6 @@
 #include <random>
 
 constexpr bool VERBOSE_COMBAT_LOG = true;
-static float GetSimTime(entt::registry& registry) {
-    return registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
-}
 
 class Systems {
 public:
@@ -729,7 +726,7 @@ public:
                 // DOCTRINE RULE 4: Shoot-Look-Shoot: Are we ALREADY engaging this threat with a missile in flight?
                 constexpr int MAX_SHOTS_PER_THREAT = 2;
 
-                int activeShots = CountActiveShotsAgainst(log, *threat);
+                int activeShots = CountActiveShotsAgainst(log, *threat, GetSimTime(registry));
                 if (activeShots >= MAX_SHOTS_PER_THREAT) {
                     continue; // Already saturated this target, move on to next threat
                 }
@@ -775,7 +772,7 @@ public:
                         threat->vel,
                         missileEntity,
                         threat->classification,
-                        0.0f,    // timeFiredSec -> put a global sim time here
+                        GetSimTime(registry),
                         true
                     });
                     log.totalMissilesFired++;
@@ -913,6 +910,10 @@ public:
         }
     }
 private:
+    static float GetSimTime(entt::registry& registry) {
+        return registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
+    }
+
     static std::string SelectWeapon(const Magazine& mag, const RadarTrack& threat) {
 
         bool needInterceptor = (threat.classification == ThreatClass::MISSILE_INBOUND ||
@@ -936,14 +937,14 @@ private:
     }
 
     // Check if we already have a missile heading toward this threat position
-    static int CountActiveShotsAgainst(const EngagementLog& log, const RadarTrack& threat) {
+    static int CountActiveShotsAgainst(const EngagementLog& log, const RadarTrack& threat, float currentSimTime) {
         int count = 0;
         for (const auto& eng : log.current) {
             if (!eng.missileAlive) continue;
-            float dist = MathUtils::GetDistance(eng.targetPos, threat.pos);
-            if (dist < DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM) {
-                count++;
-            }
+            float timeSinceFired = currentSimTime - eng.timeFiredSec;
+            MathUtils::Vec2 predictedEngPos = MathUtils::Add(eng.targetPos, MathUtils::Scale(eng.targetVel, timeSinceFired));
+            float dist = MathUtils::GetDistance(predictedEngPos, threat.pos);
+            if (dist < DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM) count++;
         }
         return count;
     }
