@@ -22,8 +22,8 @@ constexpr float DEG_TO_RAD = MATH_PI / 180.0f;
 
 // Track
 constexpr float TRACK_ACQUISITION_GATE_NM = 1.25f;
-constexpr float TRACK_MIN_CORRELATION_GATE_NM = 0.25f;
-constexpr float TRACK_MAX_CORRELATION_GATE_NM = 0.5f;
+constexpr float TRACK_MIN_CORRELATION_GATE_NM = 0.75f;
+constexpr float TRACK_MAX_CORRELATION_GATE_NM = 0.75f;
 // todo:  5 Seconds for now, Change to 10-30 seconds later, dont fire at the track until we physically detect it again
 constexpr float TRACK_DELETION_TIMEOUT_SEC = 3.0f;   // track removed from activeTracks entirely after this long unrefreshed
 constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 2.0f; // track must be fresher than this to fire on / correlate a seeker lock onto
@@ -31,7 +31,7 @@ constexpr float MAX_PLAUSIBLE_VEL_CHANGE_KNOTS = 800.0f;
 
 // Datalink
 constexpr float DATALINK_TIMEOUT_SEC = 3.0f;
-constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.25f;
+constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.5f;
 
 // Missile
 constexpr float LAUNCH_SPEED_FRACTION = 0.15f; // leaves rail at ~15% of max speed, then accelerates under thrust

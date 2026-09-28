@@ -43,7 +43,12 @@ public:
                         if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
 
                         for (auto& track : detectionData.activeTracks[observer]) {
-                            float d = MathUtils::GetDistance(seeker->targetPos, track.pos);
+                            MathUtils::Vec2 predictedTargetPos = MathUtils::Add(
+                                seeker->targetPos,
+                                MathUtils::Scale(seeker->targetVel, seeker->timeSinceLastCorrelation)
+                            );
+
+                            float d = MathUtils::GetDistance(predictedTargetPos, track.pos);
                             if (d < closestDist) {
                                 closestDist = d;
                                 best = &track;
@@ -612,7 +617,7 @@ public:
                         } else {
                             float speedNMPerSec = MathUtils::Length(track.vel);
 
-                            gateNm = TRACK_MIN_CORRELATION_GATE_NM + (speedNMPerSec * speedNMPerSec) * timeDelta;
+                            gateNm = TRACK_MIN_CORRELATION_GATE_NM + speedNMPerSec * timeDelta;
 
                             gateNm = std::clamp(
                                 gateNm,
@@ -626,7 +631,7 @@ public:
                         if (track.hasVelocity) {
                             predictedPos = MathUtils::Add(
                                 track.pos,
-                                MathUtils::Scale(track.vel, timeDelta)
+                                MathUtils::Scale(track.vel, track.ageSec)
                             );
                         }
 
@@ -648,7 +653,7 @@ public:
                         float derivedSpeedKnots = track.speedKnots;
 
                         // We can calculate velocity once we have a previous observation.
-                        if (track.consistentObservationSec >= 1 && timeDelta > 0.0001f) {
+                        if (!track.hasVelocity && timeDelta > 0.0001f) {
                             calculatedVel = MathUtils::Scale(
                                 MathUtils::Sub(ping.pos, track.pos),
                                 1.0f / timeDelta
@@ -667,12 +672,6 @@ public:
                         track.pos = ping.pos;
                         track.altitude = ping.altitude;
                         track.ageSec = 0.0f;
-
-                        // Once we've had two observations, the velocity is real.
-                        if (track.consistentObservationSec >= 2) {
-                            track.hasVelocity = true;
-                        }
-
 
                         MathUtils::Vec2 toObserver = MathUtils::Sub(obsTransform.pos, ping.pos);
                         float dist = MathUtils::Length(toObserver);
