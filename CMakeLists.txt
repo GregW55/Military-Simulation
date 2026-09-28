@@ -29,7 +29,10 @@ add_executable(${PROJECT_NAME} ${SOURCES}
         src/core/AegisEngine.cpp
         src/core/AegisEngine.h
         src/utils/ThreatAnalysis.h
-        src/utils/MetricsLogger.h)
+        src/utils/MetricsLogger.h
+        src/ecs/RadarSystem.cpp
+        src/ecs/CombatSystem.cpp
+)
 
 
 # Assuming entt.hpp is located at external/entt.hpp
