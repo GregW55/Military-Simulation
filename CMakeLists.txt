@@ -35,6 +35,7 @@ add_executable(${PROJECT_NAME} ${SOURCES}
         src/ecs/NavigationSystem.cpp
         src/ecs/MovementSystem.cpp
         src/ecs/ProximityFuseSystem.cpp
+        src/ecs/Systems.cpp
 )
 
 

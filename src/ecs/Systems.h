@@ -12,9 +12,7 @@ constexpr bool VERBOSE_COMBAT_LOG = true;
 
 class Systems {
 public:
-    static float GetSimTime(entt::registry& registry) {
-        return registry.ctx().contains<float>() ? registry.ctx().get<float>() : 0.0f;
-    }
+    static float GetSimTime(entt::registry& registry);
 
     // --- NAVIGATION SYSTEM  ---
     static void NavigationSystem(entt::registry& registry,float deltaTime);
