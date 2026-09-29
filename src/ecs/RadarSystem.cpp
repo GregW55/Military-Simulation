@@ -16,15 +16,10 @@ namespace
     // Radar scan timing
     // ============================================================
 
-    bool BeginRadarScan(
-        RadarEmitter& radar,
-        float deltaTime,
-        float& timeDelta)
-    {
+    bool BeginRadarScan(RadarEmitter& radar, float deltaTime, float& timeDelta) {
         radar.timeSinceLastScan += deltaTime;
 
-        if (radar.timeSinceLastScan < radar.scanRateSec)
-            return false;
+        if (radar.timeSinceLastScan < radar.scanRateSec) return false;
 
         timeDelta = radar.timeSinceLastScan;
         radar.timeSinceLastScan = 0.0f;
@@ -440,37 +435,20 @@ void Systems::RadarSystem(
     auto observers =
         registry.view<Transform2D, RadarEmitter, IFF>();
 
-    for (auto observer : observers)
-    {
-        auto& radar =
-            observers.get<RadarEmitter>(observer);
+    for (auto observer : observers) {
+        auto& radar = observers.get<RadarEmitter>(observer);
 
         float timeDelta = 0.0f;
 
         // Radar isn't ready to scan yet.
-        if (!BeginRadarScan(
-                radar,
-                deltaTime,
-                timeDelta))
-        {
-            continue;
-        }
+        if (!BeginRadarScan(radar, deltaTime, timeDelta)) continue;
 
         // Get the actual radar detections.
-        std::vector<RadarTrack> pings =
-            ScanForTargets(
+        std::vector<RadarTrack> pings = ScanForTargets(
                 registry,
-                observer
-            );
+                observer);
 
-        // Match those detections against
-        // this observer's existing tracks.
-        CorrelatePings(
-            registry,
-            observer,
-            pings,
-            timeDelta,
-            deltaTime
-        );
+        // Match those detections against this observer's existing tracks.
+        CorrelatePings(registry, observer, pings, timeDelta, deltaTime);
     }
 }

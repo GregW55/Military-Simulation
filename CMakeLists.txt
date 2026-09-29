@@ -32,6 +32,7 @@ add_executable(${PROJECT_NAME} ${SOURCES}
         src/utils/MetricsLogger.h
         src/ecs/RadarSystem.cpp
         src/ecs/CombatSystem.cpp
+        src/ecs/NavigationSystem.cpp
 )
 
 
