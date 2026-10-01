@@ -17,7 +17,8 @@ namespace {
             auto& log = shipView.get<EngagementLog>(entity);
             for (auto& eng : log.current) {
                 if (eng.missileAlive) {
-                    eng.missileAlive = registry.valid(eng.missileEntity);
+                    eng.missileAlive = registry.valid(eng.missileEntity) &&
+                   !registry.all_of<DeadTag>(eng.missileEntity);;
                 }
             }
             std::erase_if(log.current, [](const ActiveEngagement& e) {return !e.missileAlive;});
@@ -51,10 +52,10 @@ namespace {
             if (!eng.missileAlive) continue;
             float timeSinceFired = currentSimTime - eng.timeFiredSec;
 
-            MathUtils::Vec2 predictedEngPos = MathUtils::Add(eng.targetPos,
-                MathUtils::Scale(eng.targetVel, timeSinceFired));
+            MathUtils::Vec2 predictedThreatPos = MathUtils::Add(eng.targetPos,
+                MathUtils::Scale(threat.vel, timeSinceFired));
 
-            float dist = MathUtils::GetDistance(predictedEngPos, threat.pos);
+            float dist = MathUtils::GetDistance(predictedThreatPos, threat.pos);
             if (dist < DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM) count++;
         }
         return count;
@@ -69,11 +70,7 @@ namespace {
                 return 1; // Time to assess the first shot
 
             case ThreatClass::AIRCRAFT:
-                return 1; // Time to assess the first shot
-
             case ThreatClass::SURFACE_SHIP:
-                return 1; // Time to assess the first shot
-
             default:
                 return 1;
         }
@@ -223,6 +220,7 @@ namespace {
 
         // Don't engage targets another ship is already handling
         // (Unless it's an incoming missile - then everyone who can shoot it, should)
+        // Todo: Needs more nuance... a missile inbound in 20 minutes does not require multiple ships to fire at it
         auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
         if (threat.classification != ThreatClass::MISSILE_INBOUND) {
             if (sharedPicture.IsAssigned(threat.pos)) return false;
@@ -237,7 +235,7 @@ namespace {
         return true;
     }
 
-    void ProcessCombatEntity(entt::registry& registry, entt::entity entity, float deltaTime,
+    void ProcessCombatEntity(entt::registry& registry, entt::entity entity,
         RadarDetectionData& detectionData, std::vector<RadarTrack> sortedThreats)
     {
         auto& transform = registry.get<Transform2D>(entity);
@@ -283,6 +281,6 @@ void Systems::CombatSystem(entt::registry& registry, float deltaTime) {
     sortedThreats.reserve(16);
 
     for (auto entity : combatView) {
-        ProcessCombatEntity(registry, entity, deltaTime, detectionData, sortedThreats);
+        ProcessCombatEntity(registry, entity, detectionData, sortedThreats);
     }
 }

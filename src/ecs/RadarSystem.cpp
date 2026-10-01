@@ -51,9 +51,7 @@ namespace
                 track.ageSec += deltaTime;
             }
 
-            std::erase_if(
-                it->second,
-                [](const RadarTrack& track)
+            std::erase_if(it->second, [](const RadarTrack& track)
                 {
                     return track.ageSec > TRACK_DELETION_TIMEOUT_SEC;
                 });
@@ -79,13 +77,11 @@ namespace
 
         std::vector<RadarTrack> pings;
 
-        auto targets =
-            registry.view<Transform2D, RadarSignature, IFF>();
+        auto targets = registry.view<Transform2D, RadarSignature, IFF>();
 
         for (auto target : targets)
         {
-            if (observer == target)
-                continue;
+            if (observer == target) continue;
 
             auto& tgtTransform = targets.get<Transform2D>(target);
             auto& tgtSig = targets.get<RadarSignature>(target);
@@ -95,15 +91,12 @@ namespace
             if (obsIFF.isHostile == tgtIFF.isHostile)
                 continue;
 
-            MathUtils::Vec2 diff =
-                MathUtils::Sub(obsTransform.pos, tgtTransform.pos);
+            MathUtils::Vec2 diff = MathUtils::Sub(obsTransform.pos, tgtTransform.pos);
 
-            float distSq =
-                MathUtils::LengthSq(diff);
+            float distSq = MathUtils::LengthSq(diff);
 
             // Outside radar range.
-            if (distSq > obsRadar.rangeNmSq)
-                continue;
+            if (distSq > obsRadar.rangeNmSq) continue;
 
             bool detected = Physics::CheckRadarDetection(
                 map,
@@ -116,8 +109,7 @@ namespace
                 std::sqrt(distSq)
             );
 
-            if (!detected)
-                continue;
+            if (!detected) continue;
 
             RadarTrack ping;
 
@@ -142,64 +134,35 @@ namespace
     {
         int bestMatchIndex = -1;
 
-        float bestMatchDistSq =
-            std::numeric_limits<float>::max();
+        float bestMatchDistSq = std::numeric_limits<float>::max();
 
         for (size_t i = 0; i < tracks.size(); ++i)
         {
-            RadarTrack& track =
-                const_cast<RadarTrack&>(tracks[i]);
+            RadarTrack& track = const_cast<RadarTrack&>(tracks[i]);
 
             float gateNm;
 
-            if (!track.hasVelocity)
-            {
-                gateNm = TRACK_ACQUISITION_GATE_NM;
-            }
+            if (!track.hasVelocity) gateNm = TRACK_ACQUISITION_GATE_NM;
             else
             {
-                float speedNMPerSec =
-                    MathUtils::Length(track.vel);
+                float speedNMPerSec = MathUtils::Length(track.vel);
 
-                gateNm =
-                    TRACK_MIN_CORRELATION_GATE_NM +
-                    speedNMPerSec * timeDelta;
+                gateNm = TRACK_MIN_CORRELATION_GATE_NM + speedNMPerSec * timeDelta;
 
-                gateNm = std::clamp(
-                    gateNm,
-                    TRACK_MIN_CORRELATION_GATE_NM,
-                    TRACK_MAX_CORRELATION_GATE_NM
-                );
+                gateNm = std::clamp(gateNm, TRACK_MIN_CORRELATION_GATE_NM, TRACK_MAX_CORRELATION_GATE_NM);
             }
 
-            MathUtils::Vec2 predictedPos =
-                track.pos;
+            MathUtils::Vec2 predictedPos = track.pos;
 
-            if (track.hasVelocity)
-            {
-                predictedPos = MathUtils::Add(
-                    track.pos,
-                    MathUtils::Scale(
-                        track.vel,
-                        track.ageSec
-                    )
-                );
-            }
+            if (track.hasVelocity) predictedPos = MathUtils::Add(track.pos, MathUtils::Scale(track.vel, track.ageSec));
 
-            float distSq =
-                MathUtils::LengthSq(
-                    MathUtils::Sub(
-                        ping.pos,
-                        predictedPos
-                    )
-                );
 
-            if (distSq <= gateNm * gateNm &&
-                distSq < bestMatchDistSq)
+            float distSq = MathUtils::LengthSq(MathUtils::Sub(ping.pos, predictedPos));
+
+            if (distSq <= gateNm * gateNm && distSq < bestMatchDistSq)
             {
                 bestMatchDistSq = distSq;
-                bestMatchIndex =
-                    static_cast<int>(i);
+                bestMatchIndex = static_cast<int>(i);
             }
         }
 
@@ -220,31 +183,21 @@ namespace
     {
         constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4000.0f;
 
-        MathUtils::Vec2 calculatedVel =
-            track.vel;
+        MathUtils::Vec2 calculatedVel = track.vel;
 
-        float derivedSpeedKnots =
-            track.speedKnots;
+        float derivedSpeedKnots = track.speedKnots;
 
         // We can calculate velocity once we have
         // a previous observation.
-        if (!track.hasVelocity &&
-            timeDelta > 0.0001f)
+        if (!track.hasVelocity && timeDelta > 0.0001f)
         {
             calculatedVel = MathUtils::Scale(
-                MathUtils::Sub(
-                    ping.pos,
-                    track.pos
-                ),
-                1.0f / timeDelta
+                MathUtils::Sub(ping.pos, track.pos), 1.0f / timeDelta
             );
 
-            derivedSpeedKnots =
-                MathUtils::Length(calculatedVel) *
-                3600.0f;
+            derivedSpeedKnots = MathUtils::Length(calculatedVel) * 3600.0f;
 
-            if (derivedSpeedKnots <=
-                MAX_PLAUSIBLE_SPEED_KNOTS)
+            if (derivedSpeedKnots <= MAX_PLAUSIBLE_SPEED_KNOTS)
             {
                 track.vel = calculatedVel;
                 track.speedKnots = derivedSpeedKnots;
@@ -258,64 +211,30 @@ namespace
         track.ageSec = 0.0f;
 
         // Update closing speed.
-        MathUtils::Vec2 toObserver =
-            MathUtils::Sub(
-                observerPos,
-                ping.pos
-            );
+        MathUtils::Vec2 toObserver = MathUtils::Sub(observerPos, ping.pos);
 
-        float dist =
-            MathUtils::Length(toObserver);
+        float dist = MathUtils::Length(toObserver);
 
         if (dist > 0.001f)
         {
-            MathUtils::Vec2 dir =
-                MathUtils::Scale(
-                    toObserver,
-                    1.0f / dist
-                );
+            MathUtils::Vec2 dir = MathUtils::Scale(toObserver, 1.0f / dist);
 
-            track.closingSpeedKnots =
-                MathUtils::Dot(
-                    calculatedVel,
-                    dir
-                ) * 3600.0f;
+            track.closingSpeedKnots = MathUtils::Dot(calculatedVel, dir) * 3600.0f;
         }
 
         // Update time to impact.
-        track.timeToImpactSec =
-            ThreatAnalysis::EstimateTimeToImpact(
-                observerPos,
-                ping.pos,
-                calculatedVel
-            );
+        track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(observerPos, ping.pos, calculatedVel);
 
         // Update threat classification.
-        ThreatClass newClassification =
-            ThreatAnalysis::Classify(
-                track.speedKnots,
-                ping.altitude
-            );
+        ThreatClass newClassification = ThreatAnalysis::Classify(track.speedKnots, ping.altitude);
 
-        if (newClassification ==
-            track.classification)
-        {
-            track.consistentObservationSec +=
-                deltaTime;
-        }
-        else
-        {
-            track.consistentObservationSec = 0.0f;
-        }
+        if (newClassification == track.classification) track.consistentObservationSec += deltaTime;
+        else  track.consistentObservationSec = 0.0f;
 
-        track.classification =
-            newClassification;
+        track.classification = newClassification;
 
         // Update threat score.
-        track.threatScore =
-            ThreatAnalysis::ComputeThreatScore(
-                track
-            );
+        track.threatScore = ThreatAnalysis::ComputeThreatScore(track);
     }
 
 
@@ -339,13 +258,11 @@ namespace
         track.closingSpeedKnots = 0.0f;
         track.timeToImpactSec = -1.0f;
 
-        track.classification =
-            ThreatClass::UNKNOWN;
+        track.classification = ThreatClass::UNKNOWN;
 
         track.threatScore = 0.0f;
 
-        track.consistentObservationSec =
-            0.0f;
+        track.consistentObservationSec = 0.0f;
 
         return track;
     }
@@ -362,30 +279,19 @@ namespace
         float timeDelta,
         float deltaTime)
     {
-        auto& detectionData =
-            registry.ctx().get<RadarDetectionData>();
+        auto& detectionData = registry.ctx().get<RadarDetectionData>();
 
-        auto& obsTransform =
-            registry.get<Transform2D>(observer);
+        auto& obsTransform = registry.get<Transform2D>(observer);
 
-        auto& tracks =
-            detectionData.activeTracks[observer];
+        auto& tracks = detectionData.activeTracks[observer];
 
-        std::vector<RadarTrack>
-            newlyDiscoveredTracks;
+        std::vector<RadarTrack> newlyDiscoveredTracks;
 
-        newlyDiscoveredTracks.reserve(
-            pings.size()
-        );
+        newlyDiscoveredTracks.reserve( pings.size());
 
         for (const auto& ping : pings)
         {
-            int bestMatchIndex =
-                FindBestTrackMatch(
-                    tracks,
-                    ping,
-                    timeDelta
-                );
+            int bestMatchIndex = FindBestTrackMatch( tracks, ping, timeDelta);
 
             if (bestMatchIndex != -1)
             {
@@ -397,19 +303,10 @@ namespace
                     deltaTime
                 );
             }
-            else
-            {
-                newlyDiscoveredTracks.push_back(
-                    CreateNewTrack(ping)
-                );
-            }
+            else newlyDiscoveredTracks.push_back(CreateNewTrack(ping));
         }
 
-        tracks.insert(
-            tracks.end(),
-            newlyDiscoveredTracks.begin(),
-            newlyDiscoveredTracks.end()
-        );
+        tracks.insert(tracks.end(), newlyDiscoveredTracks.begin(), newlyDiscoveredTracks.end());
     }
 }
 
@@ -422,18 +319,12 @@ void Systems::RadarSystem(
     entt::registry& registry,
     float deltaTime)
 {
-    auto& detectionData =
-        registry.ctx().get<RadarDetectionData>();
+    auto& detectionData = registry.ctx().get<RadarDetectionData>();
 
     // First age and remove old tracks.
-    UpdateTrackAges(
-        registry,
-        detectionData,
-        deltaTime
-    );
+    UpdateTrackAges(registry, detectionData, deltaTime);
 
-    auto observers =
-        registry.view<Transform2D, RadarEmitter, IFF>();
+    auto observers = registry.view<Transform2D, RadarEmitter, IFF>();
 
     for (auto observer : observers) {
         auto& radar = observers.get<RadarEmitter>(observer);
@@ -444,9 +335,7 @@ void Systems::RadarSystem(
         if (!BeginRadarScan(radar, deltaTime, timeDelta)) continue;
 
         // Get the actual radar detections.
-        std::vector<RadarTrack> pings = ScanForTargets(
-                registry,
-                observer);
+        std::vector<RadarTrack> pings = ScanForTargets(registry, observer);
 
         // Match those detections against this observer's existing tracks.
         CorrelatePings(registry, observer, pings, timeDelta, deltaTime);
