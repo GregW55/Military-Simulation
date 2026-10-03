@@ -1,3 +1,4 @@
+#include "Components.h"
 #include "Events.h"
 #include "Systems.h"
 #include "../utils/MetricsLogger.h"

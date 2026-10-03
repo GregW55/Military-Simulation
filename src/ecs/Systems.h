@@ -1,13 +1,7 @@
 #pragma once
-#include "Components.h"
-#include "../core/Constants.h"
-#include "../core/Physics.h"
-#include "../utils/ThreatAnalysis.h"
-#include "../utils/MetricsLogger.h"
+
+#include <entt.hpp>
 #include "Events.h"
-#include <iostream>
-#include <execution>
-#include <random>
 
 constexpr bool VERBOSE_COMBAT_LOG = true;
 
