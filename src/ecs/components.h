@@ -42,7 +42,6 @@ struct Kinematics {
     float currentSpeedKnots = 0.0f;
     float desiredSpeedKnots = 0.0f;
     float accelerationRate = 0.0f;
-    bool isDead = false;
 };
 
 struct Aerodynamics {

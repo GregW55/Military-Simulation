@@ -124,20 +124,6 @@ namespace
         float decelMps = dragForce * aero->inverseMass;
 
         kin.currentSpeedKnots -= (decelMps * KNOTS_PER_MPS) * deltaTime;
-
-        bool isStalled = (aero->currentFuelKg <= 0.0f && kin.currentSpeedKnots < 200.0f);
-
-        if (transform.altitude < 0.0f || isStalled) {
-            if (!kin.isDead) {
-                if (auto* warhead = registry.try_get<Warhead>(entity)) {
-                    std::string reason = isStalled ? "OUT_OF_FUEL" : "HIT_WATER";
-
-                    MetricsLogger::Log(Systems::GetSimTime(registry),"CRASH", (uint32_t)warhead->shooter, 0,
-                        warhead->weaponId, 0.0f, reason);
-                }
-                kin.isDead = true;
-            }
-        }
     }
 
 
@@ -188,11 +174,17 @@ namespace
     }
 
 
-    void MarkDeadEntities(entt::registry& registry, const auto& view) {
+    void CheckMissileCrashes(entt::registry& registry) {
+        auto view = registry.view<Transform2D, Kinematics, Aerodynamics, Warhead>();
         for (auto entity : view) {
-            if (registry.get<Kinematics>(entity).isDead) {
-                registry.emplace_or_replace<DeadTag>(entity);
-            }
+            auto& transform = view.get<Transform2D>(entity);
+            auto& kin = view.get<Kinematics>(entity);
+            auto& aero = view.get<Aerodynamics>(entity);
+
+            // Todo: Calculate if the missile can reach its target based on its altitude/speed/current drag etc instead of hard coded 200.0f speed gate
+            bool isStalled = (aero.currentFuelKg <= 0.0f && kin.currentSpeedKnots < 200.0f);
+            if (isStalled) Systems::DestroyMissile(registry, entity, MissileEventType::OUT_OF_FUEL);
+            else if (transform.altitude < 0.0f) Systems::DestroyMissile(registry, entity, MissileEventType::HIT_WATER);
         }
     }
 }
@@ -206,5 +198,5 @@ void Systems::MovementSystem(entt::registry& registry, float deltaTime) {
         }
     );
 
-    MarkDeadEntities(registry, view);
+    CheckMissileCrashes(registry);
 }

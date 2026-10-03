@@ -51,7 +51,7 @@ namespace {
         return nullptr;
     }
 
-    void RetargetTerminalMissile(entt::registry& registry, entt::entity entity, Kinematics& kin, SeekerHead& seeker) {
+    void RetargetTerminalMissile(entt::registry& registry, entt::entity entity, SeekerHead& seeker) {
         bool missileIsHostile = registry.get<IFF>(entity).isHostile;
         RadarTrack* bestNetworkTarget = nullptr;
         float bestScore = -1.0f;
@@ -77,10 +77,7 @@ namespace {
             seeker.timeSinceLastCorrelation = 0.0f;
             seeker.hasLiveTarget = true;
         } else {
-            kin.isDead = true;
-            if (auto* warhead = registry.try_get<Warhead>(entity)) {
-                MetricsLogger::Log(Systems::GetSimTime(registry), "CRASH", (uint32_t)warhead->shooter, 0, warhead->weaponId, 0.0f, "SELF_DESTRUCT_NO_TARGET");
-            }
+            Systems::DestroyMissile(registry, entity, MissileEventType::SELF_DESTRUCT_NO_TARGET);
         }
     }
 
@@ -187,7 +184,7 @@ namespace {
             seeker.timeSinceLastCorrelation += deltaTime;
 
             if (seeker.timeSinceLastCorrelation > DATALINK_TIMEOUT_SEC) {
-                RetargetTerminalMissile(registry, entity, kin, seeker);
+                RetargetTerminalMissile(registry, entity, seeker);
             }
         }
     }
@@ -218,10 +215,7 @@ namespace {
         constexpr float INERTIAL_ARRIVAL_NM = 0.5f;
         constexpr float INERTIAL_MAX_FLIGHT_SEC = 20.0f;
         if (distToTargetNM < INERTIAL_ARRIVAL_NM || seeker.timeSinceLastCorrelation > INERTIAL_MAX_FLIGHT_SEC) {
-            kin.isDead = true;
-            if (auto* warhead = registry.try_get<Warhead>(entity)) {
-                MetricsLogger::Log(Systems::GetSimTime(registry), "CRASH", (uint32_t)warhead->shooter, 0, warhead->weaponId, 0.0f, "SELF_DESTRUCT_INERTIAL_LOST");
-            }
+            Systems::DestroyMissile(registry, entity, MissileEventType::SELF_DESTRUCT_INERTIAL_LOST);
         }
     }
 

@@ -36,6 +36,8 @@ add_executable(${PROJECT_NAME} ${SOURCES}
         src/ecs/MovementSystem.cpp
         src/ecs/ProximityFuseSystem.cpp
         src/ecs/Systems.cpp
+        src/ecs/Events.h
+        src/ecs/LoggingSystem.cpp
 )
 
 
@@ -49,3 +51,5 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         raylib
         nlohmann_json::nlohmann_json
 )
+
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -Wl,-Bstatic -lpthread -Wl,-Bdynamic")

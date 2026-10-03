@@ -45,26 +45,21 @@ namespace {
 
         float distNM = std::sqrt(distNmSq);
 
-        // -- DETRERMINE OUTCOME ---
+        // -- DETERMINE OUTCOME ---
+        MissileEventType outcome;
+
         if (roll <= dynamicPk) {
-            // HIT
             auto& hull = registry.get<Hull>(target);
             hull.currentHP -= warhead.yieldDamage;
-
-            MetricsLogger::Log(Systems::GetSimTime(registry), "IMPACT", (uint32_t)warhead.shooter, 0, warhead.weaponId, distNM, "HIT");
+            outcome = MissileEventType::HIT_SHIP;
 
             if (VERBOSE_COMBAT_LOG) {
                 std::cout << "[T=" << Systems::GetSimTime(registry) << "s] [IMPACT] Missile HIT entity " << (uint32_t)target <<"\n";
             }
 
-            if (hull.currentHP <= 0.0f) {
-                registry.emplace_or_replace<DeadTag>(target);
-            }
+            if (hull.currentHP <= 0.0f) registry.emplace_or_replace<DeadTag>(target);
         } else {
-            // MISS
-            MetricsLogger::Log(Systems::GetSimTime(registry),
-                "IMPACT", (uint32_t)warhead.shooter,
-                0, warhead.weaponId, distNM, "MISS");
+            outcome = MissileEventType::MISSED_SHIP;
 
             if (VERBOSE_COMBAT_LOG) {
                 std::cout << "[T=" << Systems::GetSimTime(registry) << "s] [IMPACT] Missile MISSED entity "
@@ -72,7 +67,7 @@ namespace {
             }
         }
 
-        registry.emplace_or_replace<DeadTag>(missile);
+        Systems::DestroyMissile(registry, missile, outcome, distNM);
     }
 
     bool CheckShipTargets(
@@ -126,15 +121,10 @@ namespace {
             float altDiffMeters = std::abs(mTrans.altitude - oTrans.altitude);
 
             if (distNmSq <= warhead.lethalRadiusNmSq && altDiffMeters <= FUSE_ALTITUDE_TOLERANCE_METERS) {
-                auto& otherWarhead = missiles.template get<Warhead>(otherMissile);
+                float distNM = std::sqrt(distNmSq);
+                Systems::DestroyMissile(registry, missile, MissileEventType::KILLED_THREAT, distNM);
+                Systems::DestroyMissile(registry, otherMissile, MissileEventType::SHOT_DOWN, distNM);
 
-                MetricsLogger::Log(Systems::GetSimTime(registry), "INTERCEPT", (uint32_t)warhead.shooter,
-                    3, warhead.weaponId, std::sqrt(distNmSq), "KILLED_THREAT");
-                MetricsLogger::Log(Systems::GetSimTime(registry), "SHOT_DOWN", (uint32_t)otherWarhead.shooter,
-                    0, otherWarhead.weaponId, std::sqrt(distNmSq), "INTERCEPTED");
-
-                registry.emplace_or_replace<DeadTag>(missile);
-                registry.emplace_or_replace<DeadTag>(otherMissile);
                 if (VERBOSE_COMBAT_LOG) {
                     std::cout << "[INTERCEPT] Missile " << (uint32_t)missile
                               << " destroyed missile " << (uint32_t)otherMissile << "\n";

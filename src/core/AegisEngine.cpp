@@ -26,6 +26,7 @@ bool AegisEngine::Initialize(const bool headless, int seed) {
     registry.ctx().emplace<std::mt19937>(seed); // Seed Randomization
     registry.ctx().emplace<float>(0.0f);           // Sim Time In Seconds
 
+    registry.ctx().emplace<SimEvents>();
     registry.ctx().emplace<MapProjection>();
     registry.ctx().emplace<MapRenderer>();
     registry.ctx().emplace<RadarDetectionData>();
@@ -182,6 +183,7 @@ void AegisEngine::Update(float deltaTime) {
     Systems::NavigationSystem(registry, deltaTime);
     Systems::CombatSystem(registry, deltaTime);
     Systems::ProximityFuseSystem(registry);
+    Systems::LoggingSystem(registry);
 
     auto deadEntities = registry.view<DeadTag>();
     registry.destroy(deadEntities.begin(), deadEntities.end());

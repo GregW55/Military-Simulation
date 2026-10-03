@@ -133,8 +133,8 @@ namespace {
         registry.emplace<RadarSignature>(missile, mStats.rcs, mStats.rcsFourthRoot);
         registry.emplace<IFF>(missile, shooterIFF.isHostile);
 
-        MetricsLogger::Log(Systems::GetSimTime(registry), "FIRE", (uint32_t)shooter,
-            (int)target.classification, weaponId, distToTarget, "IN_FLIGHT");
+        Systems::RecordMissileFired(registry, shooter, missile,
+            static_cast<int>(target.classification), weaponId, distToTarget);
 
         return missile;
     }
