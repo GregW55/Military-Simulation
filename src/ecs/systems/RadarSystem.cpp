@@ -1,9 +1,9 @@
-#include "Systems.h"
-#include "Components.h"
+#include "../Systems.h"
+#include "../Components.h"
 
-#include "../core/Constants.h"
-#include "../core/Physics.h"
-#include "../utils/ThreatAnalysis.h"
+#include "../../core/Constants.h"
+#include "../../core/Physics.h"
+#include "../../utils/ThreatAnalysis.h"
 
 #include <algorithm>
 #include <cmath>

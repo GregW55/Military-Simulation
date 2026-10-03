@@ -30,14 +30,14 @@ add_executable(${PROJECT_NAME} ${SOURCES}
         src/core/AegisEngine.h
         src/utils/ThreatAnalysis.h
         src/utils/MetricsLogger.h
-        src/ecs/RadarSystem.cpp
-        src/ecs/CombatSystem.cpp
-        src/ecs/NavigationSystem.cpp
-        src/ecs/MovementSystem.cpp
-        src/ecs/ProximityFuseSystem.cpp
-        src/ecs/Systems.cpp
+        src/ecs/systems/RadarSystem.cpp
+        src/ecs/systems/CombatSystem.cpp
+        src/ecs/systems/NavigationSystem.cpp
+        src/ecs/systems/MovementSystem.cpp
+        src/ecs/systems/ProximityFuseSystem.cpp
+        src/ecs/systems/Systems.cpp
         src/ecs/Events.h
-        src/ecs/LoggingSystem.cpp
+        src/ecs/systems/LoggingSystem.cpp
 )
 
 
