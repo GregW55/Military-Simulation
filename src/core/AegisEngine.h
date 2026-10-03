@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include "../../external/entt.hpp"
 #include "../models/ScenarioData.h"
+#include "../graphics/Renderer.h"
 
 class AegisEngine {
 public:
@@ -12,9 +13,7 @@ public:
 
 private:
     // Internal loop phases
-    void ProcessInput();
     void Update(float deltaTime);
-    void Render();
 
     // Internal helper to keep the spawner logic organized
     void SpawnScenarioUnits();
@@ -23,8 +22,6 @@ private:
     bool isHeadless = false;
     int currentSeed = 0;
     entt::registry registry;
-    Camera2D camera = { 0 };
-    ScenarioData currentScenario;
-    float timeScale = 1.0f;
-    bool showRadarRings = false;
+    ScenarioData scenario;
+    Renderer renderer;
 };

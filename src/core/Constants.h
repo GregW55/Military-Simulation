@@ -1,7 +1,7 @@
 #pragma once
 
 // Engine
-constexpr float fixedDelta = 1.0f;
+constexpr float fixedDelta = 0.01667;  // 1 / 60 (1 second update with still 60 fps)
 constexpr int OFFSET_X = -580;
 constexpr int OFFSET_Y = -470;
 constexpr float RULER_THICKNESS = 3.0f;
