@@ -15,7 +15,7 @@ public:
     void Shutdown();
     static bool ShouldClose() ;
     void ProcessInput();                                // zoom, pan, time compression, toggles
-    void Draw(entt::registry& registry, const ScenarioData& scenario);
+    void Draw(const entt::registry& registry, const ScenarioData& scenario);
 
     float TimeScale() const {return timeScale; }
 

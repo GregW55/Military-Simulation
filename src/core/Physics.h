@@ -63,7 +63,7 @@ namespace Physics {
     }
 
     inline bool CheckRadarDetection(
-        MapProjection& map,
+        const MapProjection& map,
         MathUtils::Vec2 observerPos, float observerAltMeters, float radarRangeNM,
         MathUtils::Vec2 targetPos, float targetAltMeters, float targetRcsFourthRoot, float distNM) {
 

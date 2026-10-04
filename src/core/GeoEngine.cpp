@@ -1,17 +1,10 @@
 #include "GeoEngine.h"
 #include "Constants.h"
-#include "raylib.h" // ONLY for internal textures loading
 #include <cmath>
-
-MapProjection::~MapProjection() {
-    if (heightPixelsRaw) {
-        UnloadImageColors((Color*)heightPixelsRaw);
-        heightPixelsRaw = nullptr;
-    }
-}
+#include <utility>
 
 // Calculate x,y
-MathUtils::Vec2 MapProjection::GeoToPixel(const float lat, const float lon) {
+MathUtils::Vec2 MapProjection::GeoToPixel(float lat, float lon) const {
     const float deltaLon = lon - originGeo.x;
     const float deltaLat = lat - originGeo.y;
     return {
@@ -20,7 +13,7 @@ MathUtils::Vec2 MapProjection::GeoToPixel(const float lat, const float lon) {
     };
 }
 
-MathUtils::Vec2 MapProjection::GeoToNM(const float lat, const float lon) {
+MathUtils::Vec2 MapProjection::GeoToNM(float lat, float lon) const {
     // How far are from the center of the world in degrees?
     const float deltaLon = lon - originGeo.x;
     const float deltaLat = lat - originGeo.y;
@@ -37,7 +30,7 @@ MathUtils::Vec2 MapProjection::GeoToNM(const float lat, const float lon) {
 }
 
 // Calculate Longitude/Latitude
-MathUtils::Vec2 MapProjection::PixelToGeo(const MathUtils::Vec2 pixel) {
+MathUtils::Vec2 MapProjection::PixelToGeo(MathUtils::Vec2 pixel) const {
     const float deltaX = pixel.x - originPixel.x;
     const float deltaY = pixel.y - originPixel.y;
     return {
@@ -46,7 +39,7 @@ MathUtils::Vec2 MapProjection::PixelToGeo(const MathUtils::Vec2 pixel) {
     };
 }
 
-MathUtils::Vec2 MapProjection::WorldToScreen(const MathUtils::Vec2 posNM) {
+MathUtils::Vec2 MapProjection::WorldToScreen(MathUtils::Vec2 posNM) const {
     float deltaLat = posNM.y / NM_PER_LAT_DEG;
     float localLatRad = originGeo.y * DEG_TO_RAD;
     float deltaLon = posNM.x / (NM_PER_LAT_DEG * std::cos(localLatRad));
@@ -57,7 +50,7 @@ MathUtils::Vec2 MapProjection::WorldToScreen(const MathUtils::Vec2 posNM) {
     return GeoToPixel(lat, lon);
 }
 // todo: Add true spherical distance calculation using Haversine Formula
-float MapProjection::GetDistanceNM(const MathUtils::Vec2 pixelA, const MathUtils::Vec2 pixelB) {
+float MapProjection::GetDistanceNM(MathUtils::Vec2 pixelA, MathUtils::Vec2 pixelB) const {
     MathUtils::Vec2 geoA = PixelToGeo(pixelA);
     MathUtils::Vec2 geoB = PixelToGeo(pixelB);
 
@@ -76,55 +69,51 @@ float MapProjection::GetDistanceNM(const MathUtils::Vec2 pixelA, const MathUtils
 }
 
 // Load raw height data into CPU memory
-void MapProjection::LoadheightMap(const std::string& filepath) {
-    Image heightMapImage = LoadImage(filepath.c_str());
+void MapProjection::SetHeightMap(std::vector<uint8_t> elevation, int width, int height,
+                        float artOffsetX, float artOffsetY, float artScale) {
+    elevationRaw = std::move(elevation);
+    mapWidth = width;
+    mapHeight = height;
 
-    // Store dimensions for safety checks without needing the Image object later
-    mapWidth = heightMapImage.width;
-    mapHeight = heightMapImage.height;
+    // NM -> map pixels is a straight line (see GeoToPixel / WorldToScreen), so the whole chain
+    // NM -> map pixels -> heightmap image folds into one scale and one offset per axis.
+    pxPerNmX = PX_PER_DEG_LON / (NM_PER_LAT_DEG * std::cos(originGeo.y * DEG_TO_RAD));
+    pxPerNmY = PX_PER_DEG_LAT / NM_PER_LAT_DEG;
 
-    // Load colors and cast to void* to hide the Raylib 'Color' type in the header
-    heightPixelsRaw = (void*)LoadImageColors(heightMapImage);
-
-    // Unload the Image container from CPU RAM as we now have the raw pixel array
-    UnloadImage(heightMapImage);
+    imgScaleX = pxPerNmX / artScale;
+    imgOffsetX = (originPixel.x - artOffsetX) / artScale;
+    imgScaleY = pxPerNmY / artScale;
+    imgOffsetY = (originPixel.y - artOffsetY) / artScale;
 }
 
-float MapProjection::GetElevation(MathUtils::Vec2 pixelPos) {
-    constexpr float ELEVATION_MULTIPLIER = 4000.0F / 255.0f;
-    if (!heightPixelsRaw) return 0.0f;
+float MapProjection::GetElevation(MathUtils::Vec2 posNM) const {
+    constexpr float ELEVATION_MULTIPLIER = 4000.0f / 255.0f;
+    if (elevationRaw.empty()) return 0.0f;
 
-    float imgX = (pixelPos.x - heightMapPos.x - OFFSET_X) / heightMapScale;
-    float imgY = (pixelPos.y - heightMapPos.y - OFFSET_Y) / heightMapScale;
+    float imgX = posNM.x * imgScaleX + imgOffsetX;
+    float imgY = posNM.y * imgScaleY + imgOffsetY;
 
-    // Boundary check using stored metadata
+    // Off the edge of the heightmap: treat as sea level
     if (imgX < 0 || imgX >= mapWidth || imgY < 0 || imgY >= mapHeight) return 0.0f;
 
-    // Cast the raw pointer back to a Color pointer internally
-    Color* pixels = (Color*)heightPixelsRaw;
-    int index = (int)imgY * mapWidth + (int)imgX;
-
-    if (index < 0 || index >= mapWidth * mapHeight) return 0.0f;
-
-    Color c = pixels[index];
-
-   // Map 0-255 Red channel to 0-4000 meters elevation
-    return c.r *ELEVATION_MULTIPLIER;
+   // Map 0-255 to 0-4000 meters elevation
+    return elevationRaw[(int)imgY * mapWidth + (int)imgX] * ELEVATION_MULTIPLIER;
 }
 
-bool MapProjection::HasLineOfSight(MathUtils::Vec2 startNM, MathUtils::Vec2 endNM, float startAlt, float endAlt) {
+bool MapProjection::HasLineOfSight(MathUtils::Vec2 startNM, MathUtils::Vec2 endNM, float startAlt, float endAlt) const {
     if (startAlt > 4000.0f && endAlt > 4000.0f) {return true;}
+    if (elevationRaw.empty()) return true;
 
-    // Translate Reality into Map Space
-    MathUtils::Vec2 startPx = WorldToScreen(startNM);
-    MathUtils::Vec2 endPx = WorldToScreen(endNM);
+    float dx = endNM.x - startNM.x;
+    float dy = endNM.y - startNM.y;
 
-    float dx = endPx.x - startPx.x;
-    float dy = endPx.y - startPx.y;
-    float dist = std::sqrt(dx * dx + dy * dy);
+    // Sample the path every 5 map pixels
     constexpr float LOS_CHECK_STEP_SIZE_PX = 5.0f;
+    float dxPx = dx * pxPerNmX;
+    float dyPx = dy * pxPerNmY;
+    float distPx = std::sqrt(dxPx * dxPx + dyPx * dyPx);
 
-    int steps = (int)(dist / LOS_CHECK_STEP_SIZE_PX);
+    int steps = (int)(distPx / LOS_CHECK_STEP_SIZE_PX);
     if (steps < 2) return true;
 
     float invSteps = 1.0f / (float)steps;
@@ -132,8 +121,8 @@ bool MapProjection::HasLineOfSight(MathUtils::Vec2 startNM, MathUtils::Vec2 endN
     float stepDeltaY = dy * invSteps;
     float stepDeltaAlt = (endAlt - startAlt) * invSteps;
 
-    float currentX = startPx.x;
-    float currentY = startPx.y;
+    float currentX = startNM.x;
+    float currentY = startNM.y;
     float currentAlt = startAlt;
 
     for (int i = 1; i < steps; i++) {

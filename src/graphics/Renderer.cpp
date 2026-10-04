@@ -55,7 +55,7 @@ void Renderer::ProcessInput() {
     }
 }
 
-void Renderer::Draw(entt::registry& registry, const ScenarioData& scenario) {
+void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario) {
     BeginDrawing();
     ClearBackground({ 10, 20, 30, 255 });
 
