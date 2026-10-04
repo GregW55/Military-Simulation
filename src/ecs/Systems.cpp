@@ -1,5 +1,5 @@
-#include "../Systems.h"
-#include "../components.h"
+#include "Systems.h"
+#include "components.h"
 
 float Systems::GetSimTime(entt::registry& registry)
 {

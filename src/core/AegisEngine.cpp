@@ -10,6 +10,28 @@
 #include "../utils/ScenarioParser.h"
 #include "../utils/MathUtils.h"
 #include "../utils/MetricsLogger.h"
+#include <vector>
+#include <string>
+
+namespace {
+    // Reads a heightmap image into one byte per pixel (the red channel).
+    // This is the only place terrain data touches raylib.
+    bool LoadHeightMapPixels(const std::string& path, std::vector<uint8_t>& elevation, int& width, int& height) {
+        Image image = LoadImage(path.c_str());
+        if (image.width <= 0 || image.height <= 0) return false;
+
+        Color* pixels = LoadImageColors(image);
+        width = image.width;
+        height = image.height;
+
+        elevation.resize(static_cast<size_t>(width) * height);
+        for (size_t i = 0; i < elevation.size(); ++i) elevation[i] = pixels[i].r;
+
+        UnloadImageColors(pixels);
+        UnloadImage(image);
+        return true;
+    }
+}
 
 bool AegisEngine::Initialize(const bool headless, int seed) {
     isHeadless = headless;
@@ -30,7 +52,15 @@ bool AegisEngine::Initialize(const bool headless, int seed) {
     registry.ctx().emplace<RadarDetectionData>();
     registry.ctx().emplace<SharedThreatPicture>();
 
-    registry.ctx().get<MapProjection>().LoadheightMap(scenario.heightMap.filepath);
+    // Same offsets and scale the renderer draws the heightmap with, so what you see and what the radar uses can't drift apart.
+    std::vector<uint8_t> elevation;
+    int hmWidth = 0, hmHeight = 0;
+    if (LoadHeightMapPixels(scenario.heightMap.filepath, elevation, hmWidth, hmHeight)) {
+        registry.ctx().get<MapProjection>().SetHeightMap(std::move(elevation), hmWidth, hmHeight,
+            scenario.heightMap.offsetX + OFFSET_X,
+            scenario.heightMap.offsetY + OFFSET_Y,
+            scenario.heightMap.scale);
+    }
 
     if (!headless) renderer.Init(scenario);
 
@@ -152,8 +182,6 @@ void AegisEngine::Update(float deltaTime) {
     registry.destroy(deadEntities.begin(), deadEntities.end());
 }
 
-
-
 void AegisEngine::Run() {
     auto& simTime = registry.ctx().get<float>();
 
@@ -181,21 +209,20 @@ void AegisEngine::Run() {
             }
         }
     } else {
-        constexpr int MAX_STEPS_PER_FRAME = 200;    // a slow PC will run slower instead of freezing
-        float accumulator = 0.0f;                   // simulated time we still owe the simulation
+        while (!Renderer::ShouldClose()) {
+            constexpr double FRAME_BUDGET_SEC = 0.010;  // spend at most -10ms per frame simulating; the rest is for drawing
+            float accumulator = 0.0f;                   // simulated time we still owe the simulation
 
-        while (!renderer.ShouldClose()) {
             renderer.ProcessInput();
             accumulator += GetFrameTime() * renderer.TimeScale();
 
-            int steps = 0;
-            while (accumulator >= fixedDelta && steps < MAX_STEPS_PER_FRAME) {
+            const double frameStart = GetTime();        // raylib: seconds since the window opened
+            while (accumulator >= fixedDelta && (GetTime() - frameStart) < FRAME_BUDGET_SEC) {
                 Update(fixedDelta);
                 simTime += fixedDelta;
                 accumulator -= fixedDelta;
-                ++steps;
             }
-            if (steps == MAX_STEPS_PER_FRAME) accumulator = 0.0f;
+            if (accumulator >= fixedDelta) accumulator = 0.0f;
 
             renderer.Draw(registry, scenario);
         }

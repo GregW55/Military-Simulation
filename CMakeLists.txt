@@ -35,7 +35,7 @@ add_executable(${PROJECT_NAME} ${SOURCES}
         src/ecs/systems/NavigationSystem.cpp
         src/ecs/systems/MovementSystem.cpp
         src/ecs/systems/ProximityFuseSystem.cpp
-        src/ecs/systems/Systems.cpp
+        src/ecs/Systems.cpp
         src/ecs/Events.h
         src/ecs/systems/LoggingSystem.cpp
 )
@@ -52,4 +52,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         nlohmann_json::nlohmann_json
 )
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -Wl,-Bstatic -lpthread -Wl,-Bdynamic")
+# Find the directory where the C++ compiler (and its DLLs) lives
+get_filename_component(MINGW_BIN_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
+
+# Automatically copy all required MinGW runtime DLLs to the build output directory
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MINGW_BIN_DIR}/libwinpthread-1.dll"
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MINGW_BIN_DIR}/libstdc++-6.dll"
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${MINGW_BIN_DIR}/libgcc_s_seh-1.dll"
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>
+)
