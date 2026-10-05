@@ -17,62 +17,12 @@ namespace
 
         if (!aero) return;
 
-        float targetAlt = transform.altitude;
-
-        if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
-            if (seeker->hasLiveTarget) {
-                targetAlt = aero->cruiseAltitudeMeters < 100.0f ? 10000.0f : aero->cruiseAltitudeMeters;
-
-                MathUtils::Vec2 toTarget =MathUtils::Sub( seeker->targetPos, transform.pos);
-
-                float distToTargetNM = MathUtils::Length(toTarget);
-
-                if (distToTargetNM > 0.001f) {
-                    MathUtils::Vec2 toTargetDir = MathUtils::Scale(toTarget,1.0f / distToTargetNM);
-
-                    float missileClosingSpeedNmSec = MathUtils::KnotsToNmPerSec(kin.currentSpeedKnots) *
-                        MathUtils::Dot(kin.headingVector,toTargetDir);
-
-                    MathUtils::Vec2 targetToMissileDir = MathUtils::Scale(toTarget, -1.0f / distToTargetNM);
-
-                    float targetClosingSpeedNmSec =MathUtils::Dot(seeker->targetVel, targetToMissileDir);
-
-                    float combinedClosingSpeedNmSec = missileClosingSpeedNmSec + targetClosingSpeedNmSec;
-
-                    if (combinedClosingSpeedNmSec > 0.0001f) {
-                        float timeToImpactSec = distToTargetNM / combinedClosingSpeedNmSec;
-
-                        float altDiffMeters = std::abs(seeker->targetAltitude - transform.altitude);
-
-                        float maxLateralAccelMps2 = seeker->maxLateralGs * Physics::GRAVITY;
-
-                        float timeToDescendSec = 0.0f;
-
-                        if (maxLateralAccelMps2 > 0.0f) {
-                            float peakVerticalSpeedMps = std::sqrt(2.0f * maxLateralAccelMps2 * altDiffMeters);
-
-                            peakVerticalSpeedMps = std::min(peakVerticalSpeedMps, kin.currentSpeedKnots *MPS_PER_KNOT);
-
-                            timeToDescendSec = peakVerticalSpeedMps / maxLateralAccelMps2;
-                        }
-
-                        if (timeToImpactSec <= (timeToDescendSec + DESCENT_SAFETY_MARGIN_SEC)) {
-                            targetAlt = seeker->targetAltitude;
-                        }
-                    }
-                }
-            }
-        }
-
+        float targetAlt = aero->desiredAltitudeMeters;
         float altDiff = targetAlt - transform.altitude;
 
         float speedMps = kin.currentSpeedKnots * MPS_PER_KNOT;
 
-        float maxLateralAccelMps2 = 0.0f;
-
-        if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
-            maxLateralAccelMps2 = seeker->maxLateralGs * Physics::GRAVITY;
-        }
+        float maxLateralAccelMps2 = aero->maxManeuverGs * Physics::GRAVITY;
 
         float maxVerticalSpeedMps = (maxLateralAccelMps2 > 0.0f) ? std::sqrt(2.0f * maxLateralAccelMps2 *
             std::abs(altDiff)): 0.0f;

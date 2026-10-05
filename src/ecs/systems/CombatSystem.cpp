@@ -119,10 +119,16 @@ namespace {
             mStats.maxSpeedKnots, // desiredSpeedKnots
             50.0f);               // accelerationRate
 
-        registry.emplace<Aerodynamics>(missile,
+        auto& aero = registry.emplace<Aerodynamics>(missile,
             mStats.massKg, 1.0f / mStats.massKg, mStats.areaM2,
             mStats.thrustNewtons, mStats.maxFuelKg, mStats.burnRateKgSec,
             mStats.cruiseAltitudeMeters);
+        aero.maxManeuverGs = mStats.maxLateralGs;
+
+        // First altitude order, so the missile has one before guidance gets its first look at it
+        aero.desiredAltitudeMeters = Systems::PlanMissileAltitude(
+            registry.get<Transform2D>(missile), registry.get<Kinematics>(missile),
+            aero, registry.get<SeekerHead>(missile));
 
         float baseReliability = 0.9f; // Todo: Pull this from JSON file
         registry.emplace<Warhead>(missile,

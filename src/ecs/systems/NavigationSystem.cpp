@@ -416,6 +416,55 @@ namespace {
     }
 }
 
+    float Systems::PlanMissileAltitude(const Transform2D& trans, const Kinematics& kin,
+            const Aerodynamics& aero, const SeekerHead&seeker) {
+        float targetAlt = trans.altitude;  // no live target: hold altitude
+
+        if (seeker.hasLiveTarget) {
+            targetAlt = aero.cruiseAltitudeMeters < 100.0f ? 10000.0f : aero.cruiseAltitudeMeters;
+
+            MathUtils::Vec2 toTarget = MathUtils::Sub(seeker.targetPos, trans.pos);
+
+            float distToTargetNM = MathUtils::Length(toTarget);
+
+            if (distToTargetNM > 0.001f) {
+                MathUtils::Vec2 toTargetDir = MathUtils::Scale(toTarget, 1.0f / distToTargetNM);
+
+                float missileClosingSpeedNmSec = MathUtils::KnotsToNmPerSec(kin.currentSpeedKnots) *
+                    MathUtils::Dot(kin.headingVector, toTargetDir);
+
+                MathUtils::Vec2 targetToMissileDir = MathUtils::Scale(toTarget, -1.0f / distToTargetNM);
+
+                float targetClosingSpeedNmSec = MathUtils::Dot(seeker.targetVel, targetToMissileDir);
+
+                float combinedClosingSpeedNmSec = missileClosingSpeedNmSec + targetClosingSpeedNmSec;
+
+                if (combinedClosingSpeedNmSec > 0.0001f) {
+                    float timeToImpactSec = distToTargetNM / combinedClosingSpeedNmSec;
+
+                    float altDiffMeters  = std::abs(seeker.targetAltitude - trans.altitude);
+
+                    float maxLateralAccelMps2 = seeker.maxLateralGs * Physics::GRAVITY;
+
+                    float timeToDescendSec = 0.0f;
+
+                    if (maxLateralAccelMps2 > 0.0f) {
+                        float peakVerticalSpeedMps = std::sqrt(2.0f * maxLateralAccelMps2 * altDiffMeters);
+
+                        peakVerticalSpeedMps = std::min(peakVerticalSpeedMps, kin.currentSpeedKnots * MPS_PER_KNOT);
+
+                        timeToDescendSec = peakVerticalSpeedMps / maxLateralAccelMps2;
+                    }
+
+                    if (timeToImpactSec <= (timeToDescendSec + DESCENT_SAFETY_MARGIN_SEC)) {
+                        targetAlt = seeker.targetAltitude;
+                    }
+                }
+            }
+        }
+
+        return targetAlt;
+    }
     void Systems::NavigationSystem(entt::registry& registry, float deltaTime) {
         auto view = registry.view<Transform2D, Kinematics>();
         for (auto entity : view) {
@@ -424,6 +473,12 @@ namespace {
 
             if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
                 UpdateMissileGuidance(registry,entity,trans,kin, *seeker, deltaTime);
+                // Tell the physics what altitude to fly at (MovementSystem just obeys this number)
+                if (!registry.all_of<DeadTag>(entity)) {
+                    if (auto* aero = registry.try_get<Aerodynamics>(entity)) {
+                        aero->desiredAltitudeMeters = Systems::PlanMissileAltitude(trans, kin, *aero, *seeker);
+                    }
+                }
             }
 
             if (auto* brain = registry.try_get<AutonomousGuidance>(entity)) {

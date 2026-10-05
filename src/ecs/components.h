@@ -52,6 +52,8 @@ struct Aerodynamics {
     float currentFuelKg = 0.0f;
     float burnRateKgSec = 0.0f;
     float cruiseAltitudeMeters = 0.0f;
+    float maxManeuverGs = 0.0f;             // limits how fast the missile can climb or dive
+    float desiredAltitudeMeters = 0.0f;
 
     // --- Performance Optimization Cache ---
     float lastCachedAltitude = -999.0f;
