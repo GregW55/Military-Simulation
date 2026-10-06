@@ -27,6 +27,9 @@ namespace MathUtils {
     inline float KnotsToNmPerSec(float knots) {
         return knots / 3600.0f;
     }
+    inline float NmPerSecToKnots(float nmPerSec) {
+        return nmPerSec * 3600.0f;
+    }
     inline float MetersToFeet(float meters) {
         return meters * FT_PER_METER;
     }
@@ -41,11 +44,27 @@ namespace MathUtils {
     float WrapAngle(float angle);
     float GetShortestAngleDiff(float current, float target);
     float GetMaxTurnRateDegSec(float speedKnots, float maxLateralGs);
+    // Angle in degrees between where `headingDir` points and the direction from `from` to `to`.
+    // 0 = dead ahead, 180 = directly behind. `from` and `to` must not be the same point.
+    float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to);
 
     // --- Physics & Geometry ---
     float GetRadarHorizonNM(float altitudeMeters);
 
     // --- Intercept Logic ---
+    inline Vec2 ExtrapolatePosition(Vec2 pos, Vec2 vel, float seconds) {
+        return Add(pos, Scale(vel, seconds));
+    }
+
+    inline Vec2 VelocityBetweenPositions(Vec2 from, Vec2 to, float seconds) {
+        return Scale(Sub(to, from), 1.0f / seconds);
+    }
+
+    // How different two velocities (NM/Sec) are, as a speed in knots.
+    inline float VelocityDifferenceKnots(Vec2 velA, Vec2 velB) {
+        return NmPerSecToKnots(Length(Sub(velA, velB)));
+    }
+
     Vec2 PredictIntercept(
         Vec2 shooterPos,
         float missileSpeedKnots,

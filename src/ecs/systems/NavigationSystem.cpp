@@ -17,30 +17,25 @@ namespace {
     // ========================
     RadarTrack* FindTerminalTrack(SeekerHead& seeker, Transform2D& trans,
                 Kinematics& kin, std::vector<RadarTrack>& myTracks) {
+        // Where the target we were assigned should be by now, if it kept its course
+        const MathUtils::Vec2 expectedTargetPos = MathUtils::ExtrapolatePosition(
+            seeker.targetPos, seeker.targetVel, seeker.timeSinceLastCorrelation);
+
         float closestDist = 999999.0f;
         RadarTrack* best = nullptr;
 
         for (auto& track : myTracks) {
-            // FOV check : is this track within the seeker's forward-facing cone?
-            MathUtils::Vec2 toTrack = MathUtils::Sub(track.pos, trans.pos);
-            float distToTrack = MathUtils::Length(toTrack);
+            const float distToTrack = MathUtils::GetDistance(trans.pos, track.pos);
             if (distToTrack < 0.001f) continue;
 
-            MathUtils::Vec2 toTrackDir = MathUtils::Scale(toTrack, 1.0f / distToTrack);
-            float dotWithHeading = MathUtils::Dot(kin.headingVector, toTrackDir);
-            float angleFromHeadingDeg = std::acos(std::clamp(dotWithHeading, -1.0f, 1.0f)) * RAD_TO_DEG;
+            // Rule 1: it must be inside the seeker's forward-facing cone
+            if (MathUtils::AngleOffHeadingDegrees(kin.headingVector, trans.pos, track.pos) > SEEKER_FOV_DEGREES) continue;
 
-            if (angleFromHeadingDeg > SEEKER_FOV_DEGREES) continue;
+            // Rule 2: it must be near where our assigned target should be
+            if (MathUtils::GetDistance(expectedTargetPos, track.pos) > SEEKER_IDENTITY_GATE_NM) continue;
 
-            float timeSinceAssignedTargetUpdateSec = seeker.timeSinceLastCorrelation;
-            MathUtils::Vec2 predictedAssignedTargetPos = MathUtils::Add(
-                seeker.targetPos, MathUtils::Scale(seeker.targetVel, timeSinceAssignedTargetUpdateSec));
-
-            float distFromAssignedTarget = MathUtils::GetDistance(predictedAssignedTargetPos, track.pos);
-            if (distFromAssignedTarget > SEEKER_IDENTITY_GATE_NM) continue;
-
-            float velDiffKnots = MathUtils::Length(MathUtils::Sub(track.vel, seeker.targetVel)) * 3600.0f;
-            if (velDiffKnots > MAX_PLAUSIBLE_VEL_CHANGE_KNOTS) continue;
+            // Rule 3: it must be moving like our assigned target was
+            if (MathUtils::VelocityDifferenceKnots(track.vel, seeker.targetVel) > MAX_PLAUSIBLE_VEL_CHANGE_KNOTS) continue;
 
             if (distToTrack < closestDist) {
                 closestDist = distToTrack;

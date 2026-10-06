@@ -92,9 +92,16 @@ namespace MathUtils {
     }
 
     float GetDistance(Vec2 a, Vec2 b) {
-        float dx = a.x - b.x;
-        float dy = a.y - b.y;
-        return std::sqrt(dx * dx + dy * dy);
+        return Length(Sub(a, b));
+    }
+
+    float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to) {
+        Vec2 toTarget = Sub(to, from);
+        float dist = Length(toTarget);
+
+        Vec2 toTargetDir = Scale(toTarget, 1.0f / dist);
+        float dot = Dot(headingDir, toTargetDir);
+        return std::acos(std::clamp(dot, -1.0f, 1.0f)) * RAD_TO_DEG;
     }
 
     float GetAngleDegrees(Vec2 start, Vec2 end) {

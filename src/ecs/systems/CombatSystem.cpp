@@ -103,8 +103,8 @@ namespace {
             target.vel,
             target.altitude,
             mStats.isInterceptor,
-            0.0, // Time since last correlation
-            0.0, // Time since launch (seconds)
+            0.0f, // Time since last correlation
+            0.0f, // Time since launch (seconds)
             mStats.maxLateralGs
             );
         registry.emplace<Transform2D>(missile,
