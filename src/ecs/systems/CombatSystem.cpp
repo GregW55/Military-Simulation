@@ -52,8 +52,7 @@ namespace {
             if (!eng.missileAlive) continue;
             float timeSinceFired = currentSimTime - eng.timeFiredSec;
 
-            MathUtils::Vec2 predictedThreatPos = MathUtils::Add(eng.targetPos,
-                MathUtils::Scale(threat.vel, timeSinceFired));
+            MathUtils::Vec2 predictedThreatPos = MathUtils::ExtrapolatePosition(eng.targetPos, threat.vel, timeSinceFired);
 
             float dist = MathUtils::GetDistance(predictedThreatPos, threat.pos);
             if (dist < DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM) count++;
@@ -88,11 +87,12 @@ namespace {
     {
         auto missile = registry.create();
 
-        MathUtils::Vec2 initialHeading = {1.0f, 0.0f}; // Fallback
-        MathUtils::Vec2 toTarget = MathUtils::Sub(target.pos, shooterTransform.pos);
+        const float distToTarget = MathUtils::GetDistance(shooterTransform.pos, target.pos);
 
-        float distToTarget = MathUtils::Length(toTarget);
-        if (distToTarget > 0.001f) initialHeading = MathUtils::Scale(toTarget, 1.0f / distToTarget);
+        MathUtils::Vec2 initialHeading = {1.0f, 0.0f}; // Fallback: due east if the target is on top of us
+        if (distToTarget > 0.001f) {
+            initialHeading = MathUtils::GetDirection(shooterTransform.pos, target.pos);
+        }
 
         registry.emplace<SeekerHead>(missile,
             shooter,

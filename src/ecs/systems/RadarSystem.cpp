@@ -191,11 +191,11 @@ namespace
         // a previous observation.
         if (!track.hasVelocity && timeDelta > 0.0001f)
         {
-            calculatedVel = MathUtils::Scale(
-                MathUtils::Sub(ping.pos, track.pos), 1.0f / timeDelta
-            );
+            calculatedVel = MathUtils::VelocityBetweenPositions(track.pos, ping.pos, timeDelta);
 
-            derivedSpeedKnots = MathUtils::Length(calculatedVel) * 3600.0f;
+            float derivedSpeedNmPerSec = MathUtils::Length(calculatedVel);
+
+            derivedSpeedKnots = MathUtils::NmPerSecToKnots(derivedSpeedNmPerSec);
 
             if (derivedSpeedKnots <= MAX_PLAUSIBLE_SPEED_KNOTS)
             {
@@ -211,16 +211,8 @@ namespace
         track.ageSec = 0.0f;
 
         // Update closing speed.
-        MathUtils::Vec2 toObserver = MathUtils::Sub(observerPos, ping.pos);
-
-        float dist = MathUtils::Length(toObserver);
-
-        if (dist > 0.001f)
-        {
-            MathUtils::Vec2 dir = MathUtils::Scale(toObserver, 1.0f / dist);
-
-            track.closingSpeedKnots = MathUtils::Dot(calculatedVel, dir) * 3600.0f;
-        }
+        track.closingSpeedKnots = MathUtils::NmPerSecToKnots(
+            MathUtils::ClosingSpeedNmPerSec(observerPos,calculatedVel, ping.pos));
 
         // Update time to impact.
         track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(observerPos, ping.pos, calculatedVel);

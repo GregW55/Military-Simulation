@@ -65,6 +65,15 @@ namespace MathUtils {
         return NmPerSecToKnots(Length(Sub(velA, velB)));
     }
 
+    inline Vec2 GetDirection(Vec2 from, Vec2 to) {
+        Vec2 delta = Sub(to, from);
+        return Scale(delta, 1.0f / Length(delta));
+    }
+
+    inline float ClosingSpeedNmPerSec(Vec2 pos, Vec2 vel, Vec2 otherPos) {
+        return Dot(vel, GetDirection(pos, otherPos));
+    }
+
     Vec2 PredictIntercept(
         Vec2 shooterPos,
         float missileSpeedKnots,
