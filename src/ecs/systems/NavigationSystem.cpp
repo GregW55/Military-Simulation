@@ -16,10 +16,11 @@ namespace {
     // === MISSILE GUIDANCE ===
     // ========================
     RadarTrack* FindTerminalTrack(SeekerHead& seeker, Transform2D& trans,
-                Kinematics& kin, std::vector<RadarTrack>& myTracks) {
+                                  Kinematics& kin, std::vector<RadarTrack>& myTracks)
+    {
         // Where the target we were assigned should be by now, if it kept its course
-        const MathUtils::Vec2 expectedTargetPos = MathUtils::ExtrapolatePosition(
-            seeker.targetPos, seeker.targetVel, seeker.timeSinceLastCorrelation);
+        const MathUtils::Vec2 expectedTargetPos =
+            MathUtils::ExtrapolatePosition(seeker.targetPos, seeker.targetVel, seeker.timeSinceLastCorrelation);
 
         float closestDist = 999999.0f;
         RadarTrack* best = nullptr;
@@ -92,9 +93,8 @@ namespace {
             if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
 
             for (auto& track : detectionData.activeTracks[observer]) {
-                MathUtils::Vec2 predictedTargetPos = MathUtils::Add(
-                    seeker.targetPos,
-                    MathUtils::Scale(seeker.targetVel, seeker.timeSinceLaunchSec));
+                MathUtils::Vec2 predictedTargetPos = MathUtils::ExtrapolatePosition(seeker.targetPos,
+                    seeker.targetVel, seeker.timeSinceLaunchSec);
 
                 float d = MathUtils::GetDistance(predictedTargetPos, track.pos);
                 if (d < closestDist) {
@@ -118,11 +118,10 @@ namespace {
         MathUtils::Vec2 interceptPos = MathUtils::PredictIntercept(
             trans.pos, kin.currentSpeedKnots, seeker.targetPos, seeker.targetVel);
 
-        MathUtils::Vec2 toIntercept = MathUtils::Sub(interceptPos, trans.pos);
-        float distToIntercept = MathUtils::Length(toIntercept);
+        float distToIntercept = MathUtils::GetDistance(interceptPos, trans.pos);
 
         if (distToIntercept > 0.001f) {
-            MathUtils::Vec2 desiredHeading = MathUtils::Scale(toIntercept, 1.0f / distToIntercept);
+            MathUtils::Vec2 desiredHeading = MathUtils::GetDirection(trans.pos, interceptPos);
 
             float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
             float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
@@ -191,8 +190,7 @@ namespace {
         float distToTargetNM = MathUtils::GetDistance(trans.pos, seeker.targetPos);
 
         if (distToTargetNM > 0.001f) {
-            MathUtils::Vec2 desiredHeading = MathUtils::Scale(
-                MathUtils::Sub(seeker.targetPos, trans.pos), 1.0f / distToTargetNM);
+            MathUtils::Vec2 desiredHeading = MathUtils::GetDirection(trans.pos,seeker.targetPos);
 
             float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
             float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
@@ -271,7 +269,7 @@ namespace {
             }
 
             if (distToWp > MATH_EPSILON) {
-                kin.headingVector = MathUtils::Scale(MathUtils::Sub(targetWp, trans.pos), 1.0f / distToWp);
+                kin.headingVector = MathUtils::GetDirection(trans.pos, targetWp);
             }
             kin.desiredSpeedKnots = kin.maxSpeedKnots;
         } else {
@@ -286,9 +284,7 @@ namespace {
 
             if (distToDestination > 0.5f) {
                 // Still traveling - point toward destination and go full speed
-                kin.headingVector = MathUtils::Scale(
-                    MathUtils::Sub(destination, trans.pos),
-                    1.0f / distToDestination);
+                kin.headingVector = MathUtils::GetDirection(trans.pos, destination);
                 kin.desiredSpeedKnots = kin.maxSpeedKnots;
             } else {
                 // Arrived - hand off to patrol behavior
@@ -302,10 +298,12 @@ namespace {
     }
 
     void UpdateShipTacticalState(entt::registry& registry, entt::entity entity, Transform2D& trans,
-            Kinematics& kin, AutonomousGuidance& brain, float deltaTime) {
+            Kinematics& kin, AutonomousGuidance& brain, float deltaTime)
+    {
         float closestDist = MathUtils::GetDistance(trans.pos, brain.cachedTargetPos);
-        MathUtils::Vec2 toTarget = MathUtils::Sub(brain.cachedTargetPos, trans.pos);
+
         bool foundTarget = brain.hasTarget;
+
         if (foundTarget && closestDist < registry.get<RadarEmitter>(entity).rangeNM) {
             if (brain.currentState == TacticalState::PATROL || brain.currentState == TacticalState::TRANSIT) {
                 if (!brain.pendingEngagement) {
@@ -331,7 +329,7 @@ namespace {
                 if (foundTarget) {
                     if (closestDist < brain.desiredStandoffNM ) {
                         if (closestDist > MATH_EPSILON) {
-                            MathUtils::Vec2 awayDirection = MathUtils::Scale(toTarget, -1.0f / closestDist);
+                            MathUtils::Vec2 awayDirection = MathUtils::GetDirection(brain.cachedTargetPos,trans.pos);
                             kin.headingVector = awayDirection;
                         }
                         kin.desiredSpeedKnots = kin.maxSpeedKnots;
@@ -345,7 +343,7 @@ namespace {
                 if (foundTarget) {
                     if (closestDist > brain.desiredStandoffNM + 1.0f) {
                         if (closestDist > MATH_EPSILON) {
-                            kin.headingVector = MathUtils::Scale(toTarget, 1.0f / closestDist);
+                            kin.headingVector = MathUtils::GetDirection(trans.pos, brain.cachedTargetPos);
                         }
 
                         kin.desiredSpeedKnots = kin.maxSpeedKnots;
@@ -365,10 +363,10 @@ namespace {
             case TacticalState::STANDOFF: {
                 if (foundTarget) {
                     if (closestDist > brain.desiredStandoffNM + 1.0f) {
-                        kin.headingVector = MathUtils::Scale(toTarget, 1.0f / closestDist);
+                        kin.headingVector = MathUtils::GetDirection(trans.pos, brain.cachedTargetPos);
                         kin.desiredSpeedKnots = kin.maxSpeedKnots;
                     } else if (closestDist < brain.desiredStandoffNM - 1.0f) {
-                        kin.headingVector = MathUtils::Scale(toTarget, -1.0f / closestDist);
+                        kin.headingVector = MathUtils::GetDirection(trans.pos, brain.cachedTargetPos);
                         kin.desiredSpeedKnots = kin.maxSpeedKnots;
                     } else kin.desiredSpeedKnots = 0.0f;
                 } else brain.currentState = TacticalState::PATROL;
@@ -418,19 +416,13 @@ namespace {
         if (seeker.hasLiveTarget) {
             targetAlt = aero.cruiseAltitudeMeters < 100.0f ? 10000.0f : aero.cruiseAltitudeMeters;
 
-            MathUtils::Vec2 toTarget = MathUtils::Sub(seeker.targetPos, trans.pos);
-
-            float distToTargetNM = MathUtils::Length(toTarget);
+            float distToTargetNM = MathUtils::GetDistance(trans.pos, seeker.targetPos);
 
             if (distToTargetNM > 0.001f) {
-                MathUtils::Vec2 toTargetDir = MathUtils::Scale(toTarget, 1.0f / distToTargetNM);
+                MathUtils::Vec2 missileVel = MathUtils::GetVelocityNmPerSec(kin.headingVector, kin.currentSpeedKnots);
 
-                float missileClosingSpeedNmSec = MathUtils::KnotsToNmPerSec(kin.currentSpeedKnots) *
-                    MathUtils::Dot(kin.headingVector, toTargetDir);
-
-                MathUtils::Vec2 targetToMissileDir = MathUtils::Scale(toTarget, -1.0f / distToTargetNM);
-
-                float targetClosingSpeedNmSec = MathUtils::Dot(seeker.targetVel, targetToMissileDir);
+                float missileClosingSpeedNmSec = MathUtils::GetClosingSpeedNmPerSec(trans.pos, missileVel, seeker.targetPos);
+                float targetClosingSpeedNmSec = MathUtils::GetClosingSpeedNmPerSec(seeker.targetPos, seeker.targetVel, trans.pos);
 
                 float combinedClosingSpeedNmSec = missileClosingSpeedNmSec + targetClosingSpeedNmSec;
 
@@ -471,7 +463,7 @@ namespace {
                 // Tell the physics what altitude to fly at (MovementSystem just obeys this number)
                 if (!registry.all_of<DeadTag>(entity)) {
                     if (auto* aero = registry.try_get<Aerodynamics>(entity)) {
-                        aero->desiredAltitudeMeters = Systems::PlanMissileAltitude(trans, kin, *aero, *seeker);
+                        aero->desiredAltitudeMeters = PlanMissileAltitude(trans, kin, *aero, *seeker);
                     }
                 }
             }

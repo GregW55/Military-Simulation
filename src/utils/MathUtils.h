@@ -56,6 +56,10 @@ namespace MathUtils {
         return Add(pos, Scale(vel, seconds));
     }
 
+    inline Vec2 GetVelocityNmPerSec(Vec2 headingDir, float speedKnots) {
+        return Scale(headingDir, KnotsToNmPerSec(speedKnots));
+    }
+
     inline Vec2 VelocityBetweenPositions(Vec2 from, Vec2 to, float seconds) {
         return Scale(Sub(to, from), 1.0f / seconds);
     }
@@ -70,7 +74,7 @@ namespace MathUtils {
         return Scale(delta, 1.0f / Length(delta));
     }
 
-    inline float ClosingSpeedNmPerSec(Vec2 pos, Vec2 vel, Vec2 otherPos) {
+    inline float GetClosingSpeedNmPerSec(Vec2 pos, Vec2 vel, Vec2 otherPos) {
         return Dot(vel, GetDirection(pos, otherPos));
     }
 

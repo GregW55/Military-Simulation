@@ -154,8 +154,7 @@ namespace
 
             MathUtils::Vec2 predictedPos = track.pos;
 
-            if (track.hasVelocity) predictedPos = MathUtils::Add(track.pos, MathUtils::Scale(track.vel, track.ageSec));
-
+            if (track.hasVelocity) predictedPos = MathUtils::ExtrapolatePosition(track.pos, track.vel, track.ageSec);
 
             float distSq = MathUtils::LengthSq(MathUtils::Sub(ping.pos, predictedPos));
 
@@ -212,7 +211,7 @@ namespace
 
         // Update closing speed.
         track.closingSpeedKnots = MathUtils::NmPerSecToKnots(
-            MathUtils::ClosingSpeedNmPerSec(observerPos,calculatedVel, ping.pos));
+            MathUtils::GetClosingSpeedNmPerSec(observerPos, calculatedVel, ping.pos));
 
         // Update time to impact.
         track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(observerPos, ping.pos, calculatedVel);
