@@ -40,15 +40,13 @@ namespace ThreatAnalysis {
         if (speedNmps < 0.0001f) return -1.0f;
 
         // Positive = closing, negative = opening
-        MathUtils::Vec2 toObserver = MathUtils::Sub(observerPos, trackPos);
-        float dist = MathUtils::Length(toObserver);
+        float dist = MathUtils::GetDistance(observerPos, trackPos);
         if (dist < 0.001f) return 0.0f;
 
-        MathUtils::Vec2 toObserverDir = MathUtils::Scale(toObserver, 1.0f / dist);
-        float closingSpeed = MathUtils::Dot(trackVel, toObserverDir); // NM/sec
+        float closingSpeedNmPerSec = MathUtils::GetClosingSpeedNmPerSec(observerPos, trackVel, trackPos); // NM/sec
 
-        if (closingSpeed <= 0.0f) return -1.0f; // Moving away
+        if (closingSpeedNmPerSec <= 0.0f) return -1.0f; // Moving away
 
-        return dist / closingSpeed; // Seconds until arrival
+        return dist / closingSpeedNmPerSec; // Seconds until arrival
     }
 }

@@ -96,19 +96,17 @@ namespace
         if (kin.currentSpeedKnots < 0.0f) kin.currentSpeedKnots = 0.0f;
 
         if (kin.currentSpeedKnots > 0.01f) {
-            float currentSpeedNmps = MathUtils::KnotsToNmPerSec(kin.currentSpeedKnots);
-
             if (MathUtils::LengthSq(kin.headingVector) < 0.0001f) {
                 kin.headingVector = {1.0f, 0.0f};
             }
 
-            kin.velocity = MathUtils::Scale(kin.headingVector, currentSpeedNmps);
+            kin.velocity = MathUtils::GetVelocityNmPerSec(kin.headingVector, kin.currentSpeedKnots);
         }
         else {
             kin.velocity = {0.0f, 0.0f};
         }
 
-        transform.pos = MathUtils::Add(transform.pos, MathUtils::Scale(kin.velocity, deltaTime));
+        transform.pos = MathUtils::ExtrapolatePosition(transform.pos, kin.velocity, deltaTime);
     }
 
 
