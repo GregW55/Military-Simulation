@@ -179,7 +179,7 @@ namespace
         const MathUtils::Vec2& observerPos,
         float deltaTime)
     {
-        constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 5000.0f;
+        constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4000.0f;
 
         if (track.ageSec > 0.0001f)
         {
