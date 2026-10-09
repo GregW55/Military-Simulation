@@ -209,9 +209,10 @@ void AegisEngine::Run() {
             }
         }
     } else {
+        // simulated time we still owe the simulation
+        float accumulator = 0.0f;
         while (!Renderer::ShouldClose()) {
             constexpr double FRAME_BUDGET_SEC = 0.010;  // spend at most -10ms per frame simulating; the rest is for drawing
-            float accumulator = 0.0f;                   // simulated time we still owe the simulation
 
             renderer.ProcessInput();
             accumulator += GetFrameTime() * renderer.TimeScale();
