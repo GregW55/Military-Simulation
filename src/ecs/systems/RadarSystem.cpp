@@ -210,8 +210,10 @@ namespace
         track.ageSec = 0.0f;
 
         // Update closing speed.
-        track.closingSpeedKnots = MathUtils::NmPerSecToKnots(
-            MathUtils::GetClosingSpeedNmPerSec(observerPos, calculatedVel, ping.pos));
+        if (MathUtils::GetDistance(observerPos, ping.pos) > 0.001f) {
+            track.closingSpeedKnots = MathUtils::NmPerSecToKnots(
+                MathUtils::GetClosingSpeedNmPerSec(ping.pos, calculatedVel, observerPos));
+        }
 
         // Update time to impact.
         track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(observerPos, ping.pos, calculatedVel);

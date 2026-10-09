@@ -13,7 +13,7 @@
 
 void Renderer::Init(const ScenarioData& scenario) {
     InitWindow(1920, 1080, "AEGIS - TAIWAN THEATER");
-    SetTargetFPS(60);
+    SetTargetFPS(targetFPS);
 
     camera.zoom = 1.0f;
     camera.offset = {1920.0f / 2, 1080.0f / 2};

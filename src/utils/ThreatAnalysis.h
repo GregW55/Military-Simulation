@@ -43,7 +43,7 @@ namespace ThreatAnalysis {
         float dist = MathUtils::GetDistance(observerPos, trackPos);
         if (dist < 0.001f) return 0.0f;
 
-        float closingSpeedNmPerSec = MathUtils::GetClosingSpeedNmPerSec(observerPos, trackVel, trackPos); // NM/sec
+        float closingSpeedNmPerSec = MathUtils::GetClosingSpeedNmPerSec(trackPos, trackVel, observerPos); // NM/sec
 
         if (closingSpeedNmPerSec <= 0.0f) return -1.0f; // Moving away
 

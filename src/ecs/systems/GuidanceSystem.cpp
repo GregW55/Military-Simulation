@@ -366,7 +366,7 @@ namespace {
                         kin.headingVector = MathUtils::GetDirection(trans.pos, brain.cachedTargetPos);
                         kin.desiredSpeedKnots = kin.maxSpeedKnots;
                     } else if (closestDist < brain.desiredStandoffNM - 1.0f) {
-                        kin.headingVector = MathUtils::GetDirection(trans.pos, brain.cachedTargetPos);
+                        kin.headingVector = MathUtils::GetDirection(brain.cachedTargetPos, trans.pos);
                         kin.desiredSpeedKnots = kin.maxSpeedKnots;
                     } else kin.desiredSpeedKnots = 0.0f;
                 } else brain.currentState = TacticalState::PATROL;

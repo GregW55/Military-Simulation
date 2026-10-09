@@ -74,8 +74,8 @@ namespace MathUtils {
         return Scale(delta, 1.0f / Length(delta));
     }
 
-    inline float GetClosingSpeedNmPerSec(Vec2 pos, Vec2 vel, Vec2 otherPos) {
-        return Dot(vel, GetDirection(pos, otherPos));
+    inline float GetClosingSpeedNmPerSec(Vec2 from, Vec2 vel, Vec2 to) {
+        return Dot(vel, GetDirection(from, to));
     }
 
     Vec2 PredictIntercept(
