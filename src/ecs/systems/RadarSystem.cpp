@@ -177,25 +177,16 @@ namespace
         RadarTrack& track,
         const RadarTrack& ping,
         const MathUtils::Vec2& observerPos,
-        float timeDelta,
         float deltaTime)
     {
-        constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4000.0f;
+        constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 5000.0f;
 
-        MathUtils::Vec2 calculatedVel = track.vel;
-
-        float derivedSpeedKnots = track.speedKnots;
-
-        // We can calculate velocity once we have
-        // a previous observation.
-        if (!track.hasVelocity && timeDelta > 0.0001f)
+        if (track.ageSec > 0.0001f)
         {
-            calculatedVel = MathUtils::VelocityBetweenPositions(track.pos, ping.pos, timeDelta);
+            MathUtils::Vec2 calculatedVel = MathUtils::VelocityBetweenPositions(track.pos, ping.pos, track.ageSec);
+            float derivedSpeedKnots = MathUtils::NmPerSecToKnots(MathUtils::Length(calculatedVel));
 
-            float derivedSpeedNmPerSec = MathUtils::Length(calculatedVel);
-
-            derivedSpeedKnots = MathUtils::NmPerSecToKnots(derivedSpeedNmPerSec);
-
+            // Reject impossible jumps
             if (derivedSpeedKnots <= MAX_PLAUSIBLE_SPEED_KNOTS)
             {
                 track.vel = calculatedVel;
@@ -212,11 +203,11 @@ namespace
         // Update closing speed.
         if (MathUtils::GetDistance(observerPos, ping.pos) > 0.001f) {
             track.closingSpeedKnots = MathUtils::NmPerSecToKnots(
-                MathUtils::GetClosingSpeedNmPerSec(ping.pos, calculatedVel, observerPos));
+                MathUtils::GetClosingSpeedNmPerSec(ping.pos, track.vel, observerPos));
         }
 
         // Update time to impact.
-        track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(observerPos, ping.pos, calculatedVel);
+        track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(observerPos, ping.pos, track.vel);
 
         // Update threat classification.
         ThreatClass newClassification = ThreatAnalysis::Classify(track.speedKnots, ping.altitude);
@@ -292,7 +283,6 @@ namespace
                     tracks[bestMatchIndex],
                     ping,
                     obsTransform.pos,
-                    timeDelta,
                     deltaTime
                 );
             }
