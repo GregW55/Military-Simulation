@@ -129,8 +129,7 @@ namespace
 
     int FindBestTrackMatch(
         const std::vector<RadarTrack>& tracks,
-        const RadarTrack& ping,
-        float timeDelta)
+        const RadarTrack& ping)
     {
         int bestMatchIndex = -1;
 
@@ -138,7 +137,7 @@ namespace
 
         for (size_t i = 0; i < tracks.size(); ++i)
         {
-            RadarTrack& track = const_cast<RadarTrack&>(tracks[i]);
+            const RadarTrack& track = tracks[i];
 
             float gateNm;
 
@@ -147,7 +146,7 @@ namespace
             {
                 float speedNMPerSec = MathUtils::Length(track.vel);
 
-                gateNm = TRACK_MIN_CORRELATION_GATE_NM + speedNMPerSec * timeDelta;
+                gateNm = TRACK_MIN_CORRELATION_GATE_NM + speedNMPerSec * track.ageSec;
 
                 gateNm = std::clamp(gateNm, TRACK_MIN_CORRELATION_GATE_NM, TRACK_MAX_CORRELATION_GATE_NM);
             }
@@ -183,7 +182,9 @@ namespace
 
         if (track.ageSec > 0.0001f)
         {
-            MathUtils::Vec2 calculatedVel = MathUtils::VelocityBetweenPositions(track.pos, ping.pos, track.ageSec);
+            const float timeElapsed = track.ageSec;
+
+            MathUtils::Vec2 calculatedVel = MathUtils::VelocityBetweenPositions(track.pos, ping.pos, timeElapsed);
             float derivedSpeedNmPerSec = MathUtils::Length(calculatedVel);
             float derivedSpeedKnots = MathUtils::NmPerSecToKnots(derivedSpeedNmPerSec);
 
@@ -214,7 +215,7 @@ namespace
             // Update threat classification.
             ThreatClass newClassification = ThreatAnalysis::Classify(track.speedKnots, track.altitude);
 
-            if (newClassification == track.classification) track.consistentObservationSec += deltaTime;
+            if (newClassification == track.classification) track.consistentObservationSec += timeElapsed;
             else  track.consistentObservationSec = 0.0f;
 
             track.classification = newClassification;
@@ -263,7 +264,6 @@ namespace
         entt::registry& registry,
         entt::entity observer,
         const std::vector<RadarTrack>& pings,
-        float timeDelta,
         float deltaTime)
     {
         auto& detectionData = registry.ctx().get<RadarDetectionData>();
@@ -278,7 +278,7 @@ namespace
 
         for (const auto& ping : pings)
         {
-            int bestMatchIndex = FindBestTrackMatch( tracks, ping, timeDelta);
+            int bestMatchIndex = FindBestTrackMatch(tracks, ping);
 
             if (bestMatchIndex != -1)
             {
@@ -324,6 +324,6 @@ void Systems::RadarSystem(
         std::vector<RadarTrack> pings = ScanForTargets(registry, observer);
 
         // Match those detections against this observer's existing tracks.
-        CorrelatePings(registry, observer, pings, timeDelta, deltaTime);
+        CorrelatePings(registry, observer, pings, deltaTime);
     }
 }

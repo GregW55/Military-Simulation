@@ -17,9 +17,10 @@ namespace ThreatAnalysis {
     }
 
     inline float ComputeThreatScore(const RadarTrack& track) {
-        if (track.timeToImpactSec < 0.0f) return 0.0f; // Not on intercept course
+        if (track.timeToImpactSec < 0.0f) return 0.0f;
 
-        float urgency = 1.0f / (track.timeToImpactSec + 1.0f);
+        const float urgency = 1.0f / (track.timeToImpactSec + 1.0f);
+        const float closingSpeedKnots = std::max(0.0f, track.closingSpeedKnots);
 
         float classMult = 1.0f;
         switch (track.classification) {
@@ -28,7 +29,8 @@ namespace ThreatAnalysis {
             case ThreatClass::SURFACE_SHIP:     classMult = 1.0f; break;
             default:                            classMult = 0.5f; break;
         }
-        return urgency * classMult * track.closingSpeedKnots;
+
+        return urgency * classMult * closingSpeedKnots;
     }
 
     inline float EstimateTimeToImpact(float distance, float closingSpeedNmPerSec)

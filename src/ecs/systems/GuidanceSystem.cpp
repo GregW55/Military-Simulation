@@ -93,8 +93,8 @@ namespace {
             if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
 
             for (auto& track : detectionData.activeTracks[observer]) {
-                MathUtils::Vec2 predictedTargetPos = MathUtils::ExtrapolatePosition(seeker.targetPos,
-                    seeker.targetVel, seeker.timeSinceLaunchSec);
+                const MathUtils::Vec2 predictedTargetPos = MathUtils::ExtrapolatePosition(
+                    seeker.targetPos, seeker.targetVel, seeker.timeSinceLastCorrelation);
 
                 float d = MathUtils::GetDistance(predictedTargetPos, track.pos);
                 if (d < closestDist) {
