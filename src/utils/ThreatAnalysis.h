@@ -31,22 +31,10 @@ namespace ThreatAnalysis {
         return urgency * classMult * track.closingSpeedKnots;
     }
 
-    inline float EstimateTimeToImpact(
-        MathUtils::Vec2 observerPos,
-        MathUtils::Vec2 trackPos,
-        MathUtils::Vec2 trackVel)
+    inline float EstimateTimeToImpact(float distance, float closingSpeedNmPerSec)
     {
-        float speedNmps = MathUtils::Length(trackVel);
-        if (speedNmps < 0.0001f) return -1.0f;
-
-        // Positive = closing, negative = opening
-        float dist = MathUtils::GetDistance(observerPos, trackPos);
-        if (dist < 0.001f) return 0.0f;
-
-        float closingSpeedNmPerSec = MathUtils::GetClosingSpeedNmPerSec(trackPos, trackVel, observerPos); // NM/sec
-
         if (closingSpeedNmPerSec <= 0.0f) return -1.0f; // Moving away
 
-        return dist / closingSpeedNmPerSec; // Seconds until arrival
+        return distance / closingSpeedNmPerSec; // Seconds until arrival
     }
 }

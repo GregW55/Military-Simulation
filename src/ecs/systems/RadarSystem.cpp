@@ -184,41 +184,44 @@ namespace
         if (track.ageSec > 0.0001f)
         {
             MathUtils::Vec2 calculatedVel = MathUtils::VelocityBetweenPositions(track.pos, ping.pos, track.ageSec);
-            float derivedSpeedKnots = MathUtils::NmPerSecToKnots(MathUtils::Length(calculatedVel));
+            float derivedSpeedNmPerSec = MathUtils::Length(calculatedVel);
+            float derivedSpeedKnots = MathUtils::NmPerSecToKnots(derivedSpeedNmPerSec);
 
             // Reject impossible jumps
-            if (derivedSpeedKnots <= MAX_PLAUSIBLE_SPEED_KNOTS)
-            {
-                track.vel = calculatedVel;
-                track.speedKnots = derivedSpeedKnots;
-                track.hasVelocity = true;
+            if (derivedSpeedKnots > MAX_PLAUSIBLE_SPEED_KNOTS) return;
+
+            track.vel = calculatedVel;
+            track.speedKnots = derivedSpeedKnots;
+            track.hasVelocity = true;
+            track.pos = ping.pos;
+            track.altitude = ping.altitude;
+            track.ageSec = 0.0f;
+
+            float distance = MathUtils::GetDistance(observerPos, track.pos);
+            if (distance > 0.001f) {
+                // Update closing speed.
+                float closingSpeedNmPerSec =
+                    MathUtils::GetClosingSpeedNmPerSec(track.pos, track.vel, observerPos);
+
+                track.closingSpeedKnots = MathUtils::NmPerSecToKnots(closingSpeedNmPerSec);
+
+                // Update time to impact.
+                track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(distance, closingSpeedNmPerSec);;
+
             }
+            else track.timeToImpactSec = 0.0f;
+
+            // Update threat classification.
+            ThreatClass newClassification = ThreatAnalysis::Classify(track.speedKnots, track.altitude);
+
+            if (newClassification == track.classification) track.consistentObservationSec += deltaTime;
+            else  track.consistentObservationSec = 0.0f;
+
+            track.classification = newClassification;
+
+            // Update threat score.
+            track.threatScore = ThreatAnalysis::ComputeThreatScore(track);
         }
-
-        // Update the actual track position.
-        track.pos = ping.pos;
-        track.altitude = ping.altitude;
-        track.ageSec = 0.0f;
-
-        // Update closing speed.
-        if (MathUtils::GetDistance(observerPos, ping.pos) > 0.001f) {
-            track.closingSpeedKnots = MathUtils::NmPerSecToKnots(
-                MathUtils::GetClosingSpeedNmPerSec(ping.pos, track.vel, observerPos));
-        }
-
-        // Update time to impact.
-        track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(observerPos, ping.pos, track.vel);
-
-        // Update threat classification.
-        ThreatClass newClassification = ThreatAnalysis::Classify(track.speedKnots, ping.altitude);
-
-        if (newClassification == track.classification) track.consistentObservationSec += deltaTime;
-        else  track.consistentObservationSec = 0.0f;
-
-        track.classification = newClassification;
-
-        // Update threat score.
-        track.threatScore = ThreatAnalysis::ComputeThreatScore(track);
     }
 
 

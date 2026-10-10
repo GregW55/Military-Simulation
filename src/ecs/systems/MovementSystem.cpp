@@ -130,7 +130,7 @@ namespace
             auto& aero = view.get<Aerodynamics>(entity);
 
             // Todo: Calculate if the missile can reach its target based on its altitude/speed/current drag etc instead of hard coded 200.0f speed gate
-            bool isStalled = (aero.currentFuelKg <= 0.0f && kin.currentSpeedKnots < 200.0f);
+            bool isStalled = (aero.currentFuelKg <= 0.0f && kin.currentSpeedKnots < 50.0f);
             if (isStalled) Systems::DestroyMissile(registry, entity, MissileEventType::OUT_OF_FUEL);
             else if (transform.altitude < 0.0f) Systems::DestroyMissile(registry, entity, MissileEventType::HIT_WATER);
         }
