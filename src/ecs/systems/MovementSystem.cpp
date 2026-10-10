@@ -22,7 +22,7 @@ namespace
 
         float speedMps = kin.currentSpeedKnots * MPS_PER_KNOT;
 
-        float maxLateralAccelMps2 = aero->maxManeuverGs * Physics::GRAVITY;
+        float maxLateralAccelMps2 = aero->maxManeuverGs * GRAVITY_MPS2;
 
         float maxVerticalSpeedMps = (maxLateralAccelMps2 > 0.0f) ? std::sqrt(2.0f * maxLateralAccelMps2 *
             std::abs(altDiff)): 0.0f;

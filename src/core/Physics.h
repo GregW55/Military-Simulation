@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include "GeoEngine.h"
+#include "Constants.h"
 
 /* DO NOT MODIFY ANY VARIABLES IN THIS FILE
  * ALL VARIABLES ARE PHYSICS CONSTANTS
@@ -9,14 +10,13 @@ namespace Physics {
     // Constants from US Standard Atmosphere 1976
     constexpr float SEA_LEVEL_TEMP_K = 288.15f;    // 15C
     constexpr float SEA_LEVEL_PRESSURE_PA = 101325.0f;
-    constexpr float GRAVITY = 9.80665f;
     constexpr float GAS_CONSTANT_AIR = 287.05f;    // R specific for air
     constexpr float ADIABATIC_GAS_CONSTANT = 1.4f * GAS_CONSTANT_AIR;
     constexpr float LAPSE_RATE_TROPO = -0.0065f;   // Temp drops 6.5C per km
     constexpr float ALTITUDE_TROPOPAUSE = 11000.0f; // 11km
-    constexpr float TROPO_EXPONENT = -GRAVITY / (LAPSE_RATE_TROPO * GAS_CONSTANT_AIR);
+    constexpr float TROPO_EXPONENT = -GRAVITY_MPS2 / (LAPSE_RATE_TROPO * GAS_CONSTANT_AIR);
     constexpr float TEMP_STRATO_K = 216.65f;
-    constexpr float STRATO_MULTIPLIER = -GRAVITY / (GAS_CONSTANT_AIR * TEMP_STRATO_K);
+    constexpr float STRATO_MULTIPLIER = -GRAVITY_MPS2 / (GAS_CONSTANT_AIR * TEMP_STRATO_K);
 
     // Internal helper to get Temperature (Kelvin) based on Altitude
     inline float GetTemperatureK(float altMeters) {

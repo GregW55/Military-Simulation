@@ -122,52 +122,6 @@ namespace
         return pings;
     }
 
-
-    // ============================================================
-    // Track correlation
-    // ============================================================
-
-    int FindBestTrackMatch(
-        const std::vector<RadarTrack>& tracks,
-        const RadarTrack& ping)
-    {
-        int bestMatchIndex = -1;
-
-        float bestMatchDistSq = std::numeric_limits<float>::max();
-
-        for (size_t i = 0; i < tracks.size(); ++i)
-        {
-            const RadarTrack& track = tracks[i];
-
-            float gateNm;
-
-            if (!track.hasVelocity) gateNm = TRACK_ACQUISITION_GATE_NM;
-            else
-            {
-                float speedNMPerSec = MathUtils::Length(track.vel);
-
-                gateNm = TRACK_MIN_CORRELATION_GATE_NM + speedNMPerSec * track.ageSec;
-
-                gateNm = std::clamp(gateNm, TRACK_MIN_CORRELATION_GATE_NM, TRACK_MAX_CORRELATION_GATE_NM);
-            }
-
-            MathUtils::Vec2 predictedPos = track.pos;
-
-            if (track.hasVelocity) predictedPos = MathUtils::ExtrapolatePosition(track.pos, track.vel, track.ageSec);
-
-            float distSq = MathUtils::LengthSq(MathUtils::Sub(ping.pos, predictedPos));
-
-            if (distSq <= gateNm * gateNm && distSq < bestMatchDistSq)
-            {
-                bestMatchDistSq = distSq;
-                bestMatchIndex = static_cast<int>(i);
-            }
-        }
-
-        return bestMatchIndex;
-    }
-
-
     // ============================================================
     // Existing track update
     // ============================================================
@@ -175,11 +129,8 @@ namespace
     void UpdateExistingTrack(
         RadarTrack& track,
         const RadarTrack& ping,
-        const MathUtils::Vec2& observerPos,
-        float deltaTime)
+        const MathUtils::Vec2& observerPos)
     {
-        constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4000.0f;
-
         if (track.ageSec > 0.0001f)
         {
             const float timeElapsed = track.ageSec;
@@ -255,44 +206,60 @@ namespace
         return track;
     }
 
+    float TrackGateNM(const RadarTrack& track) {
+        if (!track.hasVelocity) {
+            return TRACK_POSITION_TOLERANCE_NM + TRACK_MAX_SPEED_NM_S * track.ageSec;
+        }
+        return TRACK_POSITION_TOLERANCE_NM + 0.5f * TRACK_MAX_ACCEL_NM_S2 * (track.ageSec * track.ageSec);
+    }
 
     // ============================================================
     // Correlate all pings for one observer
     // ============================================================
 
-    void CorrelatePings(
-        entt::registry& registry,
+    void CorrelatePings(entt::registry& registry,
         entt::entity observer,
-        const std::vector<RadarTrack>& pings,
-        float deltaTime)
+        const std::vector<RadarTrack>& pings)
     {
-        auto& detectionData = registry.ctx().get<RadarDetectionData>();
+        auto& tracks = registry.ctx().get<RadarDetectionData>().activeTracks[observer];
+        const MathUtils::Vec2 observerPos = registry.get<Transform2D>(observer).pos;
 
-        auto& obsTransform = registry.get<Transform2D>(observer);
+        struct Candidate { float distSq; size_t ping; size_t track; };
+        std::vector <Candidate> candidates;
 
-        auto& tracks = detectionData.activeTracks[observer];
+        // Every ping/track pair that falls inside that track's gate
+        for (size_t p = 0; p < pings.size(); ++p) {
+            for (size_t t = 0; t < tracks.size(); ++t) {
+                const RadarTrack& track = tracks[t];
 
-        std::vector<RadarTrack> newlyDiscoveredTracks;
+                MathUtils::Vec2 predictedPos = track.hasVelocity ?
+                    MathUtils::ExtrapolatePosition(track.pos, track.vel, track.ageSec)
+                    : track.pos;
 
-        newlyDiscoveredTracks.reserve( pings.size());
-
-        for (const auto& ping : pings)
-        {
-            int bestMatchIndex = FindBestTrackMatch(tracks, ping);
-
-            if (bestMatchIndex != -1)
-            {
-                UpdateExistingTrack(
-                    tracks[bestMatchIndex],
-                    ping,
-                    obsTransform.pos,
-                    deltaTime
-                );
+                const float distSq = MathUtils::LengthSq(MathUtils::Sub(pings[p].pos, predictedPos));
+                const float gate = TrackGateNM(track);
+                if (distSq <= gate * gate) candidates.push_back({distSq, p, t});
             }
-            else newlyDiscoveredTracks.push_back(CreateNewTrack(ping));
         }
 
-        tracks.insert(tracks.end(), newlyDiscoveredTracks.begin(), newlyDiscoveredTracks.end());
+        // Closest pairs win; each ping and each track can be used once
+        std::sort(candidates.begin(), candidates.end(),
+            [](const Candidate& a, const Candidate& b) { return a.distSq < b.distSq; });
+
+        std::vector<char> pingUsed(pings.size(), 0);
+        std::vector<char> trackUsed(tracks.size(), 0);
+
+        for (const Candidate& c : candidates) {
+            if (pingUsed[c.ping] || trackUsed[c.track]) continue;
+            pingUsed[c.ping] = 1;
+            trackUsed[c.track] = 1;
+            UpdateExistingTrack(tracks[c.track], pings[c.ping], observerPos);
+        }
+
+        // Pings nobody claimed become new tracks
+        for (size_t p = 0; p < pings.size(); ++p) {
+            if (!pingUsed[p]) tracks.push_back(CreateNewTrack(pings[p]));
+        }
     }
 }
 
@@ -324,6 +291,6 @@ void Systems::RadarSystem(
         std::vector<RadarTrack> pings = ScanForTargets(registry, observer);
 
         // Match those detections against this observer's existing tracks.
-        CorrelatePings(registry, observer, pings, deltaTime);
+        CorrelatePings(registry, observer, pings);
     }
 }

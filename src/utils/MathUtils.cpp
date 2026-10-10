@@ -33,7 +33,7 @@ namespace MathUtils {
         float speedMps = speedKnots * MPS_PER_KNOT;
         if (speedMps < 1.0f) return 0.0;
 
-        float maxLateralAccelMps2 = maxLateralGs * Physics::GRAVITY;
+        float maxLateralAccelMps2 = maxLateralGs * GRAVITY_MPS2;
         float maxTurnRateRadSec = maxLateralAccelMps2 / speedMps;  // a = v * ω  →  ω = a / v
         return maxTurnRateRadSec * RAD_TO_DEG;
     }

@@ -431,7 +431,7 @@ namespace {
 
                     float altDiffMeters  = std::abs(seeker.targetAltitude - trans.altitude);
 
-                    float maxLateralAccelMps2 = seeker.maxLateralGs * Physics::GRAVITY;
+                    float maxLateralAccelMps2 = seeker.maxLateralGs * GRAVITY_MPS2;
 
                     float timeToDescendSec = 0.0f;
 

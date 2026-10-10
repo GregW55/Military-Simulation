@@ -1,5 +1,19 @@
 #pragma once
 
+// Physics
+constexpr float MATH_PI = 3.14159265f;
+constexpr float GRAVITY_MPS2 = 9.80665f;
+
+// Standard atmospheric refraction constant for Radar Horizon in Nautical Miles - accounts for radar waves bending slightly with Earth's curvature.
+constexpr float EARTH_REFRACTION_FACTOR = 1.23f;
+constexpr float MAX_TRACKED_ACCEL_G = 45;  // Approx the highest thing in units
+
+constexpr float DRAG_COEFF_SUBSONIC = 0.2f;
+constexpr float DRAG_COEFF_TRANSONIC = 0.45f;
+constexpr float DRAG_COEFF_SUPERSONIC = 0.3f;
+
+constexpr float MATH_EPSILON = 0.001f;
+
 // Engine
 constexpr float targetFPS = 60.0f;
 constexpr float fixedDelta = 1.0f / targetFPS;  // one simulation step = 1/fps
@@ -8,26 +22,25 @@ constexpr int OFFSET_Y = -470;
 constexpr float RULER_THICKNESS = 3.0f;
 
 // Conversions
-constexpr float NM_PER_LAT_DEG = 60.0f;
-
 constexpr float PX_PER_DEG_LON = 365.28f;  // Scale X
 constexpr float PX_PER_DEG_LAT = -399.78f; // Scale Y
 
-constexpr float MPS_PER_KNOT = 1852.0f / 3600.0f; // Approx 0.514444f
-constexpr float KNOTS_PER_MPS = 3600.0f / 1852.0f; // Inverse: 1 Meter/Second = 1.94384... Knots
+constexpr float NM_PER_LAT_DEG = 60.0f;
+constexpr float METERS_PER_NM = 1852.0f;
 
-constexpr float MATH_EPSILON = 0.001f;
-constexpr float MATH_PI = 3.14159265f;
+constexpr float MPS_PER_KNOT = METERS_PER_NM / 3600.0f; // Approx 0.514444f
+constexpr float KNOTS_PER_MPS = 3600.0f / 1852.0f; // Inverse: 1 Meter/Second = 1.94384... Knots
 constexpr float RAD_TO_DEG = 180.0f / MATH_PI;
 constexpr float DEG_TO_RAD = MATH_PI / 180.0f;
 
 // Track
-constexpr float TRACK_ACQUISITION_GATE_NM = 1.25f;
-constexpr float TRACK_MIN_CORRELATION_GATE_NM = 0.25f;
-constexpr float TRACK_MAX_CORRELATION_GATE_NM = 0.75f;
+constexpr float TRACK_MAX_ACCEL_NM_S2 = MAX_TRACKED_ACCEL_G * GRAVITY_MPS2 / METERS_PER_NM;
+constexpr float TRACK_POSITION_TOLERANCE_NM = 0.02f;  // for float slop
+constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4500.0f;
+constexpr float TRACK_MAX_SPEED_NM_S = MAX_PLAUSIBLE_SPEED_KNOTS / 3600.0f;
 
 // todo:  5 Seconds for now, Change to 10-30 seconds later, dont fire at the track until we physically detect it again
-constexpr float TRACK_DELETION_TIMEOUT_SEC = 3.0f;   // track removed from activeTracks entirely after this long unrefreshed
+constexpr float TRACK_DELETION_TIMEOUT_SEC = 5.0f;   // track removed from activeTracks entirely after this long unrefreshed
 constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 2.0f; // track must be fresher than this to fire on / correlate a seeker lock onto
 constexpr float MAX_PLAUSIBLE_VEL_CHANGE_KNOTS = 800.0f;
 
@@ -52,11 +65,3 @@ constexpr float MAX_SHIP_SPEED_KTS = 50.0f; // Maximum speed an entity could go 
 constexpr float MIN_MISSILE_SPEED_KTS = 250.0f; // Once an entity reaches this threshold its reclassified as MISSILE
 constexpr float MIN_AIRCRAFT_SPEED_KTS = 150.0f; // Once an entity reaches this threshold its reclassified as AIRCRAFT
 
-// Physics
-// Standard atmospheric refraction constant for Radar Horizon in Nautical Miles
-// accounts for radar waves bending slightly with Earth's curvature.
-constexpr float EARTH_REFRACTION_FACTOR = 1.23f;
-
-constexpr float DRAG_COEFF_SUBSONIC = 0.2f;
-constexpr float DRAG_COEFF_TRANSONIC = 0.45f;
-constexpr float DRAG_COEFF_SUPERSONIC = 0.3f;
