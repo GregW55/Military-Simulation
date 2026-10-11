@@ -1,84 +1,122 @@
 #pragma once
+#include "../core/Constants.h"
 
 namespace MathUtils {
-    constexpr float PX_PER_KNOT_SEC = (399.78f / 60.0f) / 3600.0f;
-    constexpr float FT_PER_METER = 3.28084f;
-    constexpr float PX_PER_NM = 399.78f / 60.0f;
-    constexpr float NM_PER_PX = 60.0f / 399.78f;
 
+    // =======================
+    // === PRIMITIVE TYPES ===
+    // =======================
     struct Vec2 {
-        float x, y;
+        float x = 0.0f;
+        float y = 0.0f;
     };
 
-    float Length(Vec2 v);
-    float LengthSq(Vec2 v);
-    float GetDistance(Vec2 a, Vec2 b);
-    float GetDistanceSq(Vec2 a, Vec2 b);
-    float GetAngleDegrees(Vec2 start, Vec2 end);
-    float Dot(Vec2 a, Vec2 b);
-    Vec2 Sub(Vec2 a, Vec2 b);
-    Vec2 Add(Vec2 a, Vec2 b);
-    Vec2 Scale(Vec2 v, float s);
-    Vec2 Lerp(Vec2 start, Vec2 end, float t);
 
-    // --- Unit Conversions ---
-    inline float KnotsToPixelsPerSec(float knots) {
+    // =================================================
+    // === VECTOR MATH & BASICS (Inline & Constexpr) ===
+    // =================================================
+    constexpr Vec2 Add(Vec2 a, Vec2 b) noexcept {
+        return { a.x + b.x, a.y + b.y };
+    }
+
+    constexpr Vec2 Sub(Vec2 a, Vec2 b) noexcept {
+        return { a.x - b.x, a.y - b.y };
+    }
+
+    constexpr Vec2 Scale(Vec2 v, float s) noexcept {
+        return { v.x * s, v.y * s };
+    }
+
+    constexpr float Dot(Vec2 a, Vec2 b) noexcept {
+        return (a.x * b.x) + (a.y * b.y);
+    }
+
+    constexpr Vec2 Lerp(Vec2 start, Vec2 end, float t) noexcept {
+        return {start.x + (end.x - start.x) * t,
+                   start.y + (end.y - start.y) * t
+        };
+    }
+    float Length(Vec2 v) noexcept;
+    float LengthSq(Vec2 v) noexcept;
+    float GetDistance(Vec2 a, Vec2 b) noexcept;
+    float GetDistanceSq(Vec2 a, Vec2 b) noexcept;
+
+
+    // ========================
+    // === UNIT CONVERSIONS ===
+    // ========================
+    constexpr float KnotsToPixelsPerSec(float knots) noexcept {
         return knots * PX_PER_KNOT_SEC;
     }
-    inline float KnotsToNmPerSec(float knots) {
-        return knots / 3600.0f;
+
+    constexpr float KnotsToNmPerSec(float knots) noexcept{
+        return knots * KNOTS_TO_NM_PER_SEC;
     }
-    inline float NmPerSecToKnots(float nmPerSec) {
-        return nmPerSec * 3600.0f;
+
+    constexpr float NmPerSecToKnots(float nmPerSec) noexcept {
+        return nmPerSec * NM_PER_SEC_TO_KNOTS;
     }
-    inline float MetersToFeet(float meters) {
-        return meters * FT_PER_METER;
+
+    constexpr float MetersToFeet(float meters) noexcept {
+        return meters * METERS_TO_FT;
     }
-    inline float NmToPixels(float nm) {
+
+    constexpr float NmToPixels(float nm) noexcept {
         return nm * PX_PER_NM;
     }
-    inline float PixelsToNm(float pixels) {
+
+    constexpr float PixelsToNm(float pixels) noexcept {
         return pixels * NM_PER_PX;
     }
 
-    // --- Navigation & Angles ---
-    float WrapAngle(float angle);
-    float GetShortestAngleDiff(float current, float target);
-    float GetMaxTurnRateDegSec(float speedKnots, float maxLateralGs);
-    // Angle in degrees between where `headingDir` points and the direction from `from` to `to`.
-    // 0 = dead ahead, 180 = directly behind. `from` and `to` must not be the same point.
-    float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to);
 
-    // --- Physics & Geometry ---
-    float GetRadarHorizonNM(float altitudeMeters);
+    // ===========================
+    // === NAVIGATION & ANGLES ===
+    // ===========================
+    float GetAngleDegrees(Vec2 start, Vec2 end) noexcept;
+    float WrapAngle(float angle) noexcept;
+    float GetShortestAngleDiff(float current, float target) noexcept;
+    float GetMaxTurnRateDegSec(float speedKnots, float maxLateralGs) noexcept;
 
-    // --- Intercept Logic ---
-    inline Vec2 ExtrapolatePosition(Vec2 pos, Vec2 vel, float seconds) {
+    // Angle in degrees between `headingDir` and the direction from `from` to `to`.
+    // 0 = dead ahead, 180 = directly behind.
+    float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to) noexcept;
+
+
+   // ======================================
+    // === GEOMETRY, PHYSICS & KINEMATICS ===
+    // ======================================
+    float GetRadarHorizonNM(float altitudeMeters) noexcept;
+
+    inline Vec2 ExtrapolatePosition(Vec2 pos, Vec2 vel, float seconds) noexcept {
         return Add(pos, Scale(vel, seconds));
     }
 
-    inline Vec2 GetVelocityNmPerSec(Vec2 headingDir, float speedKnots) {
+    inline Vec2 GetVelocityNmPerSec(Vec2 headingDir, float speedKnots) noexcept {
         return Scale(headingDir, KnotsToNmPerSec(speedKnots));
     }
 
-    inline Vec2 VelocityBetweenPositions(Vec2 from, Vec2 to, float seconds) {
+    inline Vec2 VelocityBetweenPositions(Vec2 from, Vec2 to, float seconds) noexcept {
         return Scale(Sub(to, from), 1.0f / seconds);
     }
 
-    // How different two velocities (NM/Sec) are, as a speed in knots.
-    inline float VelocityDifferenceKnots(Vec2 velA, Vec2 velB) {
+    inline float VelocityDifferenceKnots(Vec2 velA, Vec2 velB) noexcept {
         return NmPerSecToKnots(Length(Sub(velA, velB)));
     }
 
-    inline Vec2 GetDirection(Vec2 from, Vec2 to) {
+    inline Vec2 GetDirection(Vec2 from, Vec2 to) noexcept {
         Vec2 delta = Sub(to, from);
         return Scale(delta, 1.0f / Length(delta));
     }
 
-    inline float GetClosingSpeedNmPerSec(Vec2 from, Vec2 vel, Vec2 to) {
+    inline float GetClosingSpeedNmPerSec(Vec2 from, Vec2 vel, Vec2 to) noexcept {
         return Dot(vel, GetDirection(from, to));
     }
 
+
+    // ==================================
+    // === INTERCEPT & GUIDANCE LOGIC ===
+    // ==================================
     Vec2 PredictIntercept(
         Vec2 shooterPos,
         float missileSpeedKnots,
@@ -86,15 +124,17 @@ namespace MathUtils {
         Vec2 targetVel
         );
 
-    // --- Proportional Navigation Logic ---
     float CalculateProNavTurnRate(
         Vec2 missilePos,
         Vec2 missileVel,
         Vec2 targetPos,
         Vec2 targetVel,
         float navConstant = 4.0f
-        );
+        ) noexcept;
 
-    // --- Formations & Spawning ---
-    int CalculateGridColumns(int totalCount);
+
+    // ==============================
+    // === UTILITIES & FORMATIONS ===
+    // ==============================
+    int CalculateGridColumns(int totalCount) noexcept;
 }

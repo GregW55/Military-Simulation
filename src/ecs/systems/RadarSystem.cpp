@@ -16,12 +16,11 @@ namespace
     // Radar scan timing
     // ============================================================
 
-    bool ShouldBeginRadarScan(RadarEmitter& radar, float deltaTime, float& timeDelta) {
+    bool ShouldBeginRadarScan(RadarEmitter& radar, float deltaTime) {
         radar.timeSinceLastScan += deltaTime;
 
         if (radar.timeSinceLastScan < radar.scanRateSec) return false;
 
-        timeDelta = radar.timeSinceLastScan;
         radar.timeSinceLastScan = 0.0f;
 
         return true;
@@ -276,7 +275,7 @@ void Systems::RadarSystem(entt::registry& registry, float deltaTime)
         float timeDelta = 0.0f;
 
         // Radar is ready to scan
-        if (ShouldBeginRadarScan(radar, deltaTime, timeDelta)) {
+        if (ShouldBeginRadarScan(radar, deltaTime)) {
             // Get the actual radar detections.
             std::vector<RadarTrack> pings = ScanForTargets(registry, observer);
 

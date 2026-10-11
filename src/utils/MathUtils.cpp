@@ -1,35 +1,24 @@
 #include "MathUtils.h"
-#include "../core/Physics.h"
 #include <algorithm>
 #include "../core/Constants.h"
 #include <cmath>
 
 namespace MathUtils {
     // --- Internal Math Helpers (Not Exposed in header) ---
-    float LengthSq(Vec2 v) { return v.x * v.x + v.y * v.y; }
-    float Length(Vec2 v) { return std::sqrt(LengthSq(v)); }
-    float Dot(Vec2 a, Vec2 b) { return a.x * b.x + a.y * b.y; }
-    Vec2 Sub(Vec2 a, Vec2 b) { return { a.x - b.x, a.y - b.y }; }
-    Vec2 Add(Vec2 a, Vec2 b) { return { a.x + b.x, a.y + b.y }; }
-    Vec2 Scale(Vec2 v, float s) { return { v.x * s, v.y * s }; }
-    Vec2 Lerp(Vec2 start, Vec2 end, float t) {
-        return {
-            start.x + (end.x - start.x) * t,
-            start.y + (end.y - start.y) * t
-        };
-    }
+    float LengthSq(Vec2 v) noexcept { return v.x * v.x + v.y * v.y; }
+    float Length(Vec2 v) noexcept{ return std::sqrt(LengthSq(v)); }
 
-    float WrapAngle(float angle) {
+    float WrapAngle(float angle) noexcept {
         angle = std::fmod(angle + 180.0f, 360.0f);
         if (angle < 0.0f) angle += 360.0f;
         return angle - 180.0f;
     }
 
-    float GetShortestAngleDiff(float current, float target) {
+    float GetShortestAngleDiff(float current, float target) noexcept {
         return WrapAngle(target - current);
     }
 
-    float GetMaxTurnRateDegSec(float speedKnots, float maxLateralGs) {
+    float GetMaxTurnRateDegSec(float speedKnots, float maxLateralGs) noexcept {
         float speedMps = speedKnots * MPS_PER_KNOT;
         if (speedMps < 1.0f) return 0.0;
 
@@ -38,7 +27,7 @@ namespace MathUtils {
         return maxTurnRateRadSec * RAD_TO_DEG;
     }
 
-    float GetRadarHorizonNM(float altitudeMeters) {
+    float GetRadarHorizonNM(float altitudeMeters) noexcept {
         if (altitudeMeters < 0) altitudeMeters = 0;
         return EARTH_REFRACTION_FACTOR * std::sqrt(MetersToFeet(altitudeMeters));
     }
@@ -68,7 +57,7 @@ namespace MathUtils {
         return Add(targetPos, Scale(targetVel, t));
     }
 
-    float CalculateProNavTurnRate(Vec2 missilePos, Vec2 missileVel, Vec2 targetPos, Vec2 targetVel, float navConstant) {
+    float CalculateProNavTurnRate(Vec2 missilePos, Vec2 missileVel, Vec2 targetPos, Vec2 targetVel, float navConstant) noexcept {
         Vec2 los = Sub(targetPos, missilePos);
         float distSq = LengthSq(los);
         if (distSq < 0.1f) return 0.0f;
@@ -91,15 +80,15 @@ namespace MathUtils {
         return 0.0f;
     }
 
-    float GetDistance(Vec2 a, Vec2 b) {
+    float GetDistance(Vec2 a, Vec2 b) noexcept {
         return Length(Sub(a, b));
     }
 
-    float GetDistanceSq(Vec2 a, Vec2 b) {
+    float GetDistanceSq(Vec2 a, Vec2 b) noexcept {
         return LengthSq(Sub(a, b));
     }
 
-    float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to) {
+    float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to) noexcept {
         Vec2 toTarget = Sub(to, from);
         float dist = Length(toTarget);
 
@@ -108,14 +97,14 @@ namespace MathUtils {
         return std::acos(std::clamp(dot, -1.0f, 1.0f)) * RAD_TO_DEG;
     }
 
-    float GetAngleDegrees(Vec2 start, Vec2 end) {
+    float GetAngleDegrees(Vec2 start, Vec2 end) noexcept {
         float dx = end.x - start.x;
         float dy = end.y - start.y;
         return std::atan2(dy, dx) * RAD_TO_DEG;
     }
 
     // --- Formations & Spawning ---
-    int CalculateGridColumns(int totalCount) {
+    int CalculateGridColumns(int totalCount) noexcept {
         return static_cast<int>(std::ceil(std::sqrt(totalCount)));
     }
 }
