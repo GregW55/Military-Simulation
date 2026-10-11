@@ -171,10 +171,11 @@ void AegisEngine::SpawnScenarioUnits() {
 }
 
 void AegisEngine::Update(float deltaTime) {
-    Systems::MovementSystem(registry, deltaTime);
     Systems::RadarSystem(registry, deltaTime);
-    Systems::NavigationSystem(registry, deltaTime);
     Systems::CombatSystem(registry, deltaTime);
+    Systems::GuidanceSystem(registry, deltaTime);
+    Systems::MovementSystem(registry, deltaTime);
+
     Systems::ProximityFuseSystem(registry);
     Systems::LoggingSystem(registry);
 

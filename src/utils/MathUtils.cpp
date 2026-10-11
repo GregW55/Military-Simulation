@@ -95,6 +95,10 @@ namespace MathUtils {
         return Length(Sub(a, b));
     }
 
+    float GetDistanceSq(Vec2 a, Vec2 b) {
+        return LengthSq(Sub(a, b));
+    }
+
     float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to) {
         Vec2 toTarget = Sub(to, from);
         float dist = Length(toTarget);

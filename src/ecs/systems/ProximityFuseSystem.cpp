@@ -87,8 +87,7 @@ namespace {
             if (mIFF.isHostile == tIFF.isHostile) continue;
 
             // Fast-Fail Distance Check
-            MathUtils::Vec2 diff = MathUtils::Sub(mTrans.pos, tTrans.pos);
-            float distNmSq = MathUtils::LengthSq(diff);
+            float distNmSq = MathUtils::GetDistanceSq(mTrans.pos, tTrans.pos);
 
             float altDiffMeters = std::abs(mTrans.altitude - tTrans.altitude);
 
@@ -117,7 +116,7 @@ namespace {
             if (mIFF.isHostile == oIFF.isHostile) continue;
 
             auto& oTrans = missiles.template get<Transform2D>(otherMissile);
-            float distNmSq = MathUtils::LengthSq(MathUtils::Sub(mTrans.pos, oTrans.pos));
+            float distNmSq = MathUtils::GetDistanceSq(mTrans.pos, oTrans.pos);
             float altDiffMeters = std::abs(mTrans.altitude - oTrans.altitude);
 
             if (distNmSq <= warhead.lethalRadiusNmSq && altDiffMeters <= FUSE_ALTITUDE_TOLERANCE_METERS) {

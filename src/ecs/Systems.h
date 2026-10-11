@@ -11,7 +11,7 @@ public:
     static float GetSimTime(entt::registry& registry);
 
     // --- NAVIGATION SYSTEM  ---
-    static void NavigationSystem(entt::registry& registry, float deltaTime);
+    static void GuidanceSystem(entt::registry& registry, float deltaTime);
 
     static float PlanMissileAltitude(const Transform2D& trans, const Kinematics& kin,
         const Aerodynamics& aero, const SeekerHead& seeker);

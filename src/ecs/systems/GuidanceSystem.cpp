@@ -236,7 +236,7 @@ namespace {
         for (auto& track : myTracks) {
             if (track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) continue;
 
-            float distSq = MathUtils::LengthSq(MathUtils::Sub(trans.pos, track.pos));
+            float distSq = MathUtils::GetDistanceSq(trans.pos, track.pos);
 
             if (distSq < bestDistSq) {
                 bestDistSq = distSq;
@@ -452,7 +452,7 @@ namespace {
 
         return targetAlt;
     }
-    void Systems::NavigationSystem(entt::registry& registry, float deltaTime) {
+    void Systems::GuidanceSystem(entt::registry& registry, float deltaTime) {
         auto view = registry.view<Transform2D, Kinematics>();
         for (auto entity : view) {
             auto& trans = view.get<Transform2D>(entity);

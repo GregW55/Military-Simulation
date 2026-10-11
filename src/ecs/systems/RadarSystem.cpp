@@ -16,7 +16,7 @@ namespace
     // Radar scan timing
     // ============================================================
 
-    bool BeginRadarScan(RadarEmitter& radar, float deltaTime, float& timeDelta) {
+    bool ShouldBeginRadarScan(RadarEmitter& radar, float deltaTime, float& timeDelta) {
         radar.timeSinceLastScan += deltaTime;
 
         if (radar.timeSinceLastScan < radar.scanRateSec) return false;
@@ -32,10 +32,7 @@ namespace
     // Track maintenance
     // ============================================================
 
-    void UpdateTrackAges(
-        entt::registry& registry,
-        RadarDetectionData& detectionData,
-        float deltaTime)
+    void UpdateTrackAges(entt::registry& registry, RadarDetectionData& detectionData, float deltaTime)
     {
         for (auto it = detectionData.activeTracks.begin();
              it != detectionData.activeTracks.end();)
@@ -91,9 +88,7 @@ namespace
             if (obsIFF.isHostile == tgtIFF.isHostile)
                 continue;
 
-            MathUtils::Vec2 diff = MathUtils::Sub(obsTransform.pos, tgtTransform.pos);
-
-            float distSq = MathUtils::LengthSq(diff);
+            float distSq = MathUtils::GetDistanceSq(obsTransform.pos, tgtTransform.pos);
 
             // Outside radar range.
             if (distSq > obsRadar.rangeNmSq) continue;
@@ -217,9 +212,7 @@ namespace
     // Correlate all pings for one observer
     // ============================================================
 
-    void CorrelatePings(entt::registry& registry,
-        entt::entity observer,
-        const std::vector<RadarTrack>& pings)
+    void CorrelatePings(entt::registry& registry, entt::entity observer, const std::vector<RadarTrack>& pings)
     {
         auto& tracks = registry.ctx().get<RadarDetectionData>().activeTracks[observer];
         const MathUtils::Vec2 observerPos = registry.get<Transform2D>(observer).pos;
@@ -236,7 +229,7 @@ namespace
                     MathUtils::ExtrapolatePosition(track.pos, track.vel, track.ageSec)
                     : track.pos;
 
-                const float distSq = MathUtils::LengthSq(MathUtils::Sub(pings[p].pos, predictedPos));
+                const float distSq = MathUtils::GetDistanceSq(pings[p].pos, predictedPos);
                 const float gate = TrackGateNM(track);
                 if (distSq <= gate * gate) candidates.push_back({distSq, p, t});
             }
@@ -268,9 +261,7 @@ namespace
 // RADAR SYSTEM
 // ================================================================
 
-void Systems::RadarSystem(
-    entt::registry& registry,
-    float deltaTime)
+void Systems::RadarSystem(entt::registry& registry, float deltaTime)
 {
     auto& detectionData = registry.ctx().get<RadarDetectionData>();
 
@@ -284,13 +275,13 @@ void Systems::RadarSystem(
 
         float timeDelta = 0.0f;
 
-        // Radar isn't ready to scan yet.
-        if (!BeginRadarScan(radar, deltaTime, timeDelta)) continue;
+        // Radar is ready to scan
+        if (ShouldBeginRadarScan(radar, deltaTime, timeDelta)) {
+            // Get the actual radar detections.
+            std::vector<RadarTrack> pings = ScanForTargets(registry, observer);
 
-        // Get the actual radar detections.
-        std::vector<RadarTrack> pings = ScanForTargets(registry, observer);
-
-        // Match those detections against this observer's existing tracks.
-        CorrelatePings(registry, observer, pings);
+            // Match those detections against this observer's existing tracks.
+            CorrelatePings(registry, observer, pings);
+        }
     }
 }

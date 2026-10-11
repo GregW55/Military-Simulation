@@ -13,6 +13,7 @@ namespace MathUtils {
     float Length(Vec2 v);
     float LengthSq(Vec2 v);
     float GetDistance(Vec2 a, Vec2 b);
+    float GetDistanceSq(Vec2 a, Vec2 b);
     float GetAngleDegrees(Vec2 start, Vec2 end);
     float Dot(Vec2 a, Vec2 b);
     Vec2 Sub(Vec2 a, Vec2 b);

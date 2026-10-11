@@ -105,7 +105,7 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
 
                     for (auto target : sigTargets) {
                         if (sigTargets.get<IFF>(target).isHostile == iff.isHostile) continue;
-                        float d = MathUtils::LengthSq(MathUtils::Sub(transform.pos, sigTargets.get<Transform2D>(target).pos));
+                        float d = MathUtils::GetDistanceSq(transform.pos, sigTargets.get<Transform2D>(target).pos);
                         if (d < nearestDistSq) {
                             nearestDistSq = d;
                             nearest = target;
