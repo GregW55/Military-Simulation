@@ -84,8 +84,8 @@ namespace MathUtils {
 
 
    // ======================================
-    // === GEOMETRY, PHYSICS & KINEMATICS ===
-    // ======================================
+   // === GEOMETRY, PHYSICS & KINEMATICS ===
+   // ======================================
     float GetRadarHorizonNM(float altitudeMeters) noexcept;
 
     inline Vec2 ExtrapolatePosition(Vec2 pos, Vec2 vel, float seconds) noexcept {

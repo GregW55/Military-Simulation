@@ -4,9 +4,33 @@
 #include <cmath>
 
 namespace MathUtils {
-    // --- Internal Math Helpers (Not Exposed in header) ---
+
+    // =================================================
+    // === VECTOR MATH & BASICS (Inline & Constexpr) ===
+    // =================================================
+    float Length(Vec2 v) noexcept{ return std::sqrtf(LengthSq(v)); }
+
     float LengthSq(Vec2 v) noexcept { return v.x * v.x + v.y * v.y; }
-    float Length(Vec2 v) noexcept{ return std::sqrt(LengthSq(v)); }
+
+    float GetDistance(Vec2 a, Vec2 b) noexcept {
+        Vec2 delta = Sub(a, b);
+        return Length(delta);
+     }
+
+     float GetDistanceSq(Vec2 a, Vec2 b) noexcept {
+        Vec2 delta = Sub(a, b);
+        return LengthSq(delta);
+    }
+
+
+    // ===========================
+    // === NAVIGATION & ANGLES ===
+    // ===========================
+    float GetAngleDegrees(Vec2 start, Vec2 end) noexcept {
+        Vec2 delta = Sub(end, start);
+        float rad = std::atan2f(delta.y, delta.x);
+        return rad * RAD_TO_DEG;
+    }
 
     float WrapAngle(float angle) noexcept {
         angle = std::fmod(angle + 180.0f, 360.0f);
@@ -27,11 +51,29 @@ namespace MathUtils {
         return maxTurnRateRadSec * RAD_TO_DEG;
     }
 
+    float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to) noexcept {
+        Vec2 toTarget = Sub(to, from);
+        float dist = Length(toTarget);
+
+        Vec2 toTargetDir = Scale(toTarget, 1.0f / dist);
+        float dot = Dot(headingDir, toTargetDir);
+        return std::acos(std::clamp(dot, -1.0f, 1.0f)) * RAD_TO_DEG;
+    }
+
+
+
+    // ======================================
+    // === GEOMETRY, PHYSICS & KINEMATICS ===
+    // ======================================
     float GetRadarHorizonNM(float altitudeMeters) noexcept {
         if (altitudeMeters < 0) altitudeMeters = 0;
         return EARTH_REFRACTION_FACTOR * std::sqrt(MetersToFeet(altitudeMeters));
     }
 
+
+    // ==================================
+    // === INTERCEPT & GUIDANCE LOGIC ===
+    // ==================================
     Vec2 PredictIntercept(Vec2 shooterPos, float missileSpeedKnots, Vec2 targetPos, Vec2 targetVel) {
         float missileSpeedNmps = KnotsToNmPerSec(missileSpeedKnots);
         Vec2 relativePos = Sub(targetPos, shooterPos);
@@ -80,31 +122,13 @@ namespace MathUtils {
         return 0.0f;
     }
 
-    float GetDistance(Vec2 a, Vec2 b) noexcept {
-        return Length(Sub(a, b));
-    }
 
-    float GetDistanceSq(Vec2 a, Vec2 b) noexcept {
-        return LengthSq(Sub(a, b));
-    }
-
-    float AngleOffHeadingDegrees(Vec2 headingDir, Vec2 from, Vec2 to) noexcept {
-        Vec2 toTarget = Sub(to, from);
-        float dist = Length(toTarget);
-
-        Vec2 toTargetDir = Scale(toTarget, 1.0f / dist);
-        float dot = Dot(headingDir, toTargetDir);
-        return std::acos(std::clamp(dot, -1.0f, 1.0f)) * RAD_TO_DEG;
-    }
-
-    float GetAngleDegrees(Vec2 start, Vec2 end) noexcept {
-        float dx = end.x - start.x;
-        float dy = end.y - start.y;
-        return std::atan2(dy, dx) * RAD_TO_DEG;
-    }
-
+    // ==============================
+    // === UTILITIES & FORMATIONS ===
+    // ==============================
     // --- Formations & Spawning ---
     int CalculateGridColumns(int totalCount) noexcept {
-        return static_cast<int>(std::ceil(std::sqrt(totalCount)));
+        if (totalCount <= 0) return 0;
+        return static_cast<int>(std::ceil(std::sqrt(static_cast<float>(totalCount))));
     }
 }
