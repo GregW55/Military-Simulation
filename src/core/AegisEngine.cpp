@@ -44,8 +44,8 @@ bool AegisEngine::Initialize(const bool headless, int seed) {
 
     if (scenario.scenarioName.empty()) return false;
 
-    registry.ctx().emplace<std::mt19937>(seed); // Seed Randomization
-    registry.ctx().emplace<float>(0.0f);           // Sim Time In Seconds
+    registry.ctx().emplace<std::mt19937>(seed);                // Seed Randomization
+    registry.ctx().emplace<float>(0.0f);                          // Sim Time In Seconds
 
     registry.ctx().emplace<SimEvents>();
     registry.ctx().emplace<MapProjection>();
@@ -123,14 +123,14 @@ void AegisEngine::SpawnScenarioUnits() {
 
                 registry.emplace<Transform2D>(entity,
                     MathUtils::Vec2{startX, startY},              // Location (Cartesian NM)
-                    mastHeight,                                   // Altitude (Meters)
+                mastHeight,                                    // Altitude (Meters)
                     0.0f                                          // Heading (Degrees)
                 );
 
                 registry.emplace<Kinematics>(entity,
                      MathUtils::Vec2{0.0f, 0.0f},           // Starting velocity (NM/sec)
                      MathUtils::Vec2{0.0f, 0.0f},           // Starting heading vector
-                     maxSpeed,                         // Max Speed (Knots)
+                     maxSpeed,                                 // Max Speed (Knots)
                      0.0f,                                        // Current Speed (Knots)
                      0.0f,                                        // Desired Speed (Knots)
                      5.0f                                         // Acceleration Rate (Knots/sec)
@@ -139,7 +139,7 @@ void AegisEngine::SpawnScenarioUnits() {
                 registry.emplace<AutonomousGuidance>(entity,
                     group.initialState,                           // Initial State
                     optimalStandoff,                           // Standoff Range (NM)
-                    waypointsNM,                              // Translated Flat Waypoints (NM)
+                    waypointsNM,                               // Translated Flat Waypoints (NM)
                     static_cast<size_t>(0)                        // Current Waypoint Index
                     );
 
@@ -152,7 +152,7 @@ void AegisEngine::SpawnScenarioUnits() {
                     stats.radarRangeNM,                           // Range (Nautical Miles)
                     stats.radarRangeNM * stats.radarRangeNM,      // Physics Cache (NM Squared)
                     stats.radarScanRateSec,                       // Scan Rate(Seconds)
-                    randomStartTimer                             // Time Since Last Scan (Randomized when initialized)
+                    randomStartTimer                           // Time Since Last Scan (Randomized when initialized)
                 );
 
                 registry.emplace<RadarSignature>(entity,
@@ -161,7 +161,7 @@ void AegisEngine::SpawnScenarioUnits() {
                     );
 
                 registry.emplace<IFF>(entity,
-                    group.isHostile                              // Friendly / Hostile
+                    group.isHostile                               // Friendly / Hostile
                 );
                 registry.emplace<EngagementLog>(entity);
                 registry.emplace<Hull>(entity, 100.0f);
@@ -172,7 +172,7 @@ void AegisEngine::SpawnScenarioUnits() {
 
 void AegisEngine::Update(float deltaTime) {
     Systems::RadarSystem(registry, deltaTime);
-    Systems::CombatSystem(registry, deltaTime);
+    Systems::CombatSystem(registry);
     Systems::GuidanceSystem(registry, deltaTime);
     Systems::MovementSystem(registry, deltaTime);
 
@@ -213,12 +213,12 @@ void AegisEngine::Run() {
         // simulated time we still owe the simulation
         float accumulator = 0.0f;
         while (!Renderer::ShouldClose()) {
-            constexpr double FRAME_BUDGET_SEC = 0.010;  // spend at most -10ms per frame simulating; the rest is for drawing
+            constexpr double FRAME_BUDGET_SEC = 0.010;            // spend at most -10ms per frame simulating; the rest is for drawing
 
             renderer.ProcessInput();
             accumulator += GetFrameTime() * renderer.TimeScale();
 
-            const double frameStart = GetTime();        // raylib: seconds since the window opened
+            const double frameStart = GetTime();                  // raylib: seconds since the window opened
             while (accumulator >= fixedDelta && (GetTime() - frameStart) < FRAME_BUDGET_SEC) {
                 Update(fixedDelta);
                 simTime += fixedDelta;
@@ -232,6 +232,6 @@ void AegisEngine::Run() {
 }
 
 void AegisEngine::Shutdown() {
-    MetricsLogger::Shutdown();                  // closes the CSV
-    if (!isHeadless) renderer.Shutdown();       // unloads textures and closes the window
+    MetricsLogger::Shutdown();                                    // closes the CSV
+    if (!isHeadless) renderer.Shutdown();                         // unloads textures and closes the window
 }

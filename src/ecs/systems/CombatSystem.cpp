@@ -11,17 +11,21 @@
 #include <vector>
 
 namespace {
-    void CleanupEngagementLogs(entt::registry& registry) {
-        auto shipView = registry.view<EngagementLog>();
-        for (auto entity : shipView) {
-            auto& log = shipView.get<EngagementLog>(entity);
+    void PruneDeadEngagements(entt::registry& registry) {
+        for (auto [entity, log] : registry.view<EngagementLog>().each()) {
+
+            // Update the alive status of each tracked missile
             for (auto& eng : log.current) {
                 if (eng.missileAlive) {
                     eng.missileAlive = registry.valid(eng.missileEntity) &&
-                   !registry.all_of<DeadTag>(eng.missileEntity);;
+                                       !registry.all_of<DeadTag>(eng.missileEntity);
                 }
             }
-            std::erase_if(log.current, [](const ActiveEngagement& e) {return !e.missileAlive;});
+
+            // Remove dead engagements from the vector
+            std::erase_if(log.current, [](const ActiveEngagement& e) {
+                return !e.missileAlive;
+            });
         }
     }
 
@@ -274,17 +278,17 @@ namespace {
     }
 }
 
-void Systems::CombatSystem(entt::registry& registry, float deltaTime) {
+void Systems::CombatSystem(entt::registry& registry) {
     registry.ctx().get<SharedThreatPicture>().Clear();
-
-    auto& detectionData = registry.ctx().get<RadarDetectionData>();
-
-    CleanupEngagementLogs(registry);
-
-    auto combatView = registry.view<Transform2D, IFF, Magazine, AutonomousGuidance, EngagementLog>();
 
     std::vector<RadarTrack> sortedThreats;
     sortedThreats.reserve(16);
+
+    auto& detectionData = registry.ctx().get<RadarDetectionData>();
+
+    PruneDeadEngagements(registry);
+
+    auto combatView = registry.view<Transform2D, IFF, Magazine, AutonomousGuidance, EngagementLog>();
 
     for (auto entity : combatView) {
         ProcessCombatEntity(registry, entity, detectionData, sortedThreats);

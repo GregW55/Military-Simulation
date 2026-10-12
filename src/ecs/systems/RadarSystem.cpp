@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <vector>
 
 namespace
@@ -92,7 +91,7 @@ namespace
             // Outside radar range.
             if (distSq > obsRadar.rangeNmSq) continue;
 
-            bool detected = Physics::CheckRadarDetection(
+            bool detected = Physics::CanRadarDetectTarget(
                 map,
                 obsTransform.pos,
                 obsTransform.altitude,
@@ -271,8 +270,6 @@ void Systems::RadarSystem(entt::registry& registry, float deltaTime)
 
     for (auto observer : observers) {
         auto& radar = observers.get<RadarEmitter>(observer);
-
-        float timeDelta = 0.0f;
 
         // Radar is ready to scan
         if (ShouldBeginRadarScan(radar, deltaTime)) {

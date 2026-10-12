@@ -62,7 +62,7 @@ namespace Physics {
         return std::sqrt(ADIABATIC_GAS_CONSTANT * tempK);
     }
 
-    inline bool CheckRadarDetection(
+    inline bool CanRadarDetectTarget(
         const MapProjection& map,
         MathUtils::Vec2 observerPos, float observerAltMeters, float radarRangeNM,
         MathUtils::Vec2 targetPos, float targetAltMeters, float targetRcsFourthRoot, float distNM) {

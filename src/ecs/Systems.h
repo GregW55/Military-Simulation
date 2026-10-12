@@ -23,7 +23,7 @@ public:
     static void RadarSystem(entt::registry& registry, float deltaTime);
 
     // --- COMBAT SYSTEM ---
-    static void CombatSystem(entt::registry& registry, float deltaTime);
+    static void CombatSystem(entt::registry& registry);
 
     static void ProximityFuseSystem(entt::registry& registry);
 

@@ -1,5 +1,4 @@
 #pragma once
-#include "raylib.h"
 #include "../../external/entt.hpp"
 #include "../models/ScenarioData.h"
 #include "../graphics/Renderer.h"
