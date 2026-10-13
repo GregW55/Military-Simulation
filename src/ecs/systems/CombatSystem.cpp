@@ -1,7 +1,5 @@
 #include "../Systems.h"
-
 #include "../Components.h"
-
 #include "../../core/Constants.h"
 #include "../../utils/MetricsLogger.h"
 
@@ -157,7 +155,7 @@ namespace {
         const IFF& iff,
         Magazine& mag,
         EngagementLog& log,
-        RadarTrack& threat,
+        const RadarTrack& threat,
         const MissileStats& mStats,
         const std::string& selectedWeapon,
         float distToTarget,
@@ -195,7 +193,7 @@ namespace {
         IFF& iff,
         Magazine& mag,
         EngagementLog& log,
-        RadarTrack& threat)
+        const RadarTrack& threat)
     {
         if (threat.consistentObservationSec < 1.0f) return false;
         if (threat.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) return false;
@@ -210,7 +208,7 @@ namespace {
         // Target must be in weapon range
         if (distToTarget > mStats.maxRangeNM) return false;
 
-        // Don't dire at close range - too late for missiles to arm/guide
+        // Don't fire at close range - too late for missiles to arm/guide
         if (distToTarget < MIN_ENGAGEMENT_RANGE_NM) return false;
 
         // Shoot-Look-Shoot: Are we ALREADY engaging this threat with a missile in flight?
@@ -245,52 +243,58 @@ namespace {
         return true;
     }
 
-    void ProcessCombatEntity(entt::registry& registry, entt::entity entity,
-        RadarDetectionData& detectionData, std::vector<RadarTrack> sortedThreats)
+    bool SortThreatsByPriority(entt::entity entity, RadarDetectionData& detectionData, std::vector<RadarTrack>*& outTracks)
     {
-        auto& transform = registry.get<Transform2D>(entity);
-        auto& iff = registry.get<IFF>(entity);
-        auto& mag = registry.get<Magazine>(entity);
-        auto& brain = registry.get<AutonomousGuidance>(entity);
-        auto& log = registry.get<EngagementLog>(entity);
-
-        if (brain.currentState != TacticalState::STANDOFF &&
-            brain.currentState != TacticalState::DEFEND &&
-            brain.currentState != TacticalState::INTERCEPT) return;
-
-        auto& tracks = detectionData.activeTracks[entity];
-        if (tracks.empty()) return;
-
         // --- Sort tracks by threat score (Highest priority first) ---
-        sortedThreats.clear();
-        for (auto& track : tracks) sortedThreats.push_back(track);
 
-        std::sort(sortedThreats.begin(), sortedThreats.end(),
+        // Look up the entity in the map safely without auto-inserting
+        auto it = detectionData.activeTracks.find(entity);
+        if (it == detectionData.activeTracks.end()) return false;
+
+        // Grab a reference to the actual vector of tracks
+        auto& tracks = it->second;
+        if (tracks.empty()) return false;
+
+        // Sort the real tracks in place
+        std::sort(tracks.begin(), tracks.end(),
             [](const RadarTrack& a, const RadarTrack& b) {
             return a.threatScore > b.threatScore;
-    });
+        });
 
-        for (RadarTrack threat : sortedThreats) {
-            if (ProcessThreat(registry, entity, transform, iff, mag, log, threat)) {
-                break;
-            }
-        }
+        outTracks = &tracks;
+        return true;
     }
 }
 
 void Systems::CombatSystem(entt::registry& registry) {
     registry.ctx().get<SharedThreatPicture>().Clear();
-
-    std::vector<RadarTrack> sortedThreats;
-    sortedThreats.reserve(16);
-
     auto& detectionData = registry.ctx().get<RadarDetectionData>();
 
     PruneDeadEngagements(registry);
 
     auto combatView = registry.view<Transform2D, IFF, Magazine, AutonomousGuidance, EngagementLog>();
 
-    for (auto entity : combatView) {
-        ProcessCombatEntity(registry, entity, detectionData, sortedThreats);
-    }
+    combatView.each([&](entt::entity entity,
+                        Transform2D& transform,
+                        IFF& iff,
+                        Magazine& mag,
+                        AutonomousGuidance& brain,
+                        EngagementLog& log)
+    {
+        if (brain.currentState != TacticalState::STANDOFF &&
+            brain.currentState != TacticalState::DEFEND &&
+            brain.currentState != TacticalState::INTERCEPT) return;
+
+        std::vector<RadarTrack>* tracks = nullptr;
+
+        // Does the lookup, sorts in place, and bails out if empty/missing
+        if (!SortThreatsByPriority(entity, detectionData, tracks)) return;
+
+        // Loop through the sorted tracks at the pointer
+        for (const RadarTrack& threat : *tracks) {
+            if (ProcessThreat(registry, entity, transform, iff, mag, log, threat)) {
+                break;
+            }
+        }
+    });
 }
