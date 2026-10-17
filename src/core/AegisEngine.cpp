@@ -144,7 +144,8 @@ void AegisEngine::SpawnScenarioUnits() {
                     );
 
                 registry.emplace<Magazine>(entity,
-                    stats.loadout,                                // Weapons / Ammo Count
+                    stats.loadout,                                // Default Weapons / Max Ammo Count
+                    stats.loadout,                                // Current Weapons / Current Ammo Count
                     0.0f                                          // Weapon Firing Cooldown
                 );
 

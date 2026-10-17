@@ -1,7 +1,18 @@
 #pragma once
 #include "../utils/MathUtils.h"
 #include "../models/TacticalData.h"
-#include"../external/entt.hpp"
+
+enum class EngagementStatus {
+    ReadyToEngage,
+    TrackUnconfirmed,
+    TrackStale,
+    NoCompatibleWeapon,
+    OutOfRange,
+    BelowMinRange,
+    MaxShotsInFlight,
+    AmmoReserveProtected,
+    TargetAlreadyAssigned
+};
 
 enum class TacticalState {
     TRANSIT,
@@ -23,6 +34,12 @@ enum class ThreatClass {
     AIRCRAFT,           // Fast, airborne, medium RCS
     MISSILE_INBOUND,    // Very fast, tiny RCS, closing rapidly, low altitude
     FRIENDLY            // IFF confirmed friendly(future)
+};
+
+struct EngagementEvaluationResult {
+    EngagementStatus status = EngagementStatus::ReadyToEngage;
+    const MissileStats* missileStats = nullptr;
+    float distanceToTarget = 0.0f;
 };
 
 struct DeadTag {};
@@ -161,6 +178,7 @@ struct SeekerHead {
 
 // What weapons are currently loaded, and can we fire
 struct Magazine {
+    std::unordered_map<std::string, int> maxAmmo;
     std::unordered_map<std::string, int> currentAmmo;
     float fireCooldown = 0.0f;
 };
