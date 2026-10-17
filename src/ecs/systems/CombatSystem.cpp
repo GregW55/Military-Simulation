@@ -186,7 +186,73 @@ namespace {
         }
     }
 
-    bool ProcessThreat(
+    EngagementEvaluationResult EvaluateEngagement(
+        entt::registry& registry,
+        const Transform2D& transform,
+        const Magazine& mag,
+        const EngagementLog& log,
+        const RadarTrack& threat)
+    {
+        EngagementEvaluationResult result;
+
+        if (threat.consistentObservationSec < MIN_OBSERVATION_TIME_SEC) {
+            result.status = EngagementStatus::TrackUnconfirmed;
+            return result;
+        }
+        if (threat.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) {
+            result.status = EngagementStatus::TrackStale;
+            return result;
+        }
+
+        // --- Shoot-Look-Shoot Logic ---
+        int activeShots = CountActiveShotsAgainst(log, threat, Systems::GetSimTime(registry));
+        if (activeShots >= MAX_SHOTS_PER_THREAT ||
+           (activeShots == 1 && threat.timeToImpactSec > MAX_TTI_FOR_SECOND_SHOT_SEC)) {
+            result.status = EngagementStatus::MaxShotsInFlight;
+            return result;
+        }
+        // --- Weapon & Range Selection ---
+        std::string selectedWeapon = SelectWeapon(mag, threat);
+        if (selectedWeapon.empty()) {
+            result.status = EngagementStatus::NoCompatibleWeapon;
+            return result;
+        }
+
+        // Assign the pointer once; we know it's valid past this point
+        result.missileStats = &TacticalDatabase::GetMissile(selectedWeapon);
+        result.distanceToTarget = MathUtils::GetDistance(transform.pos, threat.pos);
+
+        if (result.distanceToTarget > result.missileStats->maxRangeNM) {
+            result.status = EngagementStatus::OutOfRange;
+            return result;
+        }
+        if (result.distanceToTarget < MIN_ENGAGEMENT_RANGE_NM) {
+            result.status = EngagementStatus::BelowMinRange;
+            return result;
+        }
+
+        int currentAmmo = mag.currentAmmo.at(result.missileStats->name);
+        int maxAmmo = mag.maxAmmo.at(result.missileStats->name);
+        int reserveThreshold = std::max(1, static_cast<int>(maxAmmo * MIN_AMMO_RESERVE_RATIO));
+
+        if (currentAmmo <= reserveThreshold && threat.classification != ThreatClass::MISSILE_INBOUND) {
+            result.status = EngagementStatus::AmmoReserveProtected;
+            return result;
+        }
+
+        // --- Datalink check to see if we're already targeting this ---
+        // Todo: Needs more nuance... a missile inbound in 20 minutes does not require multiple ships to fire at it
+        auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
+        if (threat.classification != ThreatClass::MISSILE_INBOUND && sharedPicture.IsAssigned(threat.pos)) {
+            result.status = EngagementStatus::TargetAlreadyAssigned;
+            return result;
+        }
+
+        result.status = EngagementStatus::ReadyToEngage;
+        return result;
+    }
+
+    bool TryEngageThreat(
         entt::registry& registry,
         entt::entity entity,
         Transform2D& transform,
@@ -195,50 +261,17 @@ namespace {
         EngagementLog& log,
         const RadarTrack& threat)
     {
-        if (threat.consistentObservationSec < 1.0f) return false;
-        if (threat.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) return false;
+        EngagementEvaluationResult eval = EvaluateEngagement(registry, transform, mag, log, threat);
 
-        // Selected the right weapon for this target
-        std::string selectedWeapon = SelectWeapon(mag, threat);
-        if (selectedWeapon.empty()) return false;
+        if (eval.status != EngagementStatus::ReadyToEngage) return false;
 
-        const MissileStats& mStats = TacticalDatabase::GetMissile(selectedWeapon);
-        float distToTarget = MathUtils::GetDistance(transform.pos, threat.pos);
-
-        // Target must be in weapon range
-        if (distToTarget > mStats.maxRangeNM) return false;
-
-        // Don't fire at close range - too late for missiles to arm/guide
-        if (distToTarget < MIN_ENGAGEMENT_RANGE_NM) return false;
-
-        // Shoot-Look-Shoot: Are we ALREADY engaging this threat with a missile in flight?
-        constexpr int MAX_SHOTS_PER_THREAT = 2;
-
-        int activeShots = CountActiveShotsAgainst(log, threat, Systems::GetSimTime(registry));
-        if (activeShots >= MAX_SHOTS_PER_THREAT) return false;
-
-        // First shot is still in flight with time to spare
-        if (activeShots == 1 && threat.timeToImpactSec > 30.0f) return false;
-
-        // Only fire last missiles at incoming missiles (keep at least 1 in reserve per type)
-        if (mag.currentAmmo.at(selectedWeapon) <= 1 &&
-            threat.classification != ThreatClass::MISSILE_INBOUND) return false;
-
-        int salvoCount = DetermineSalvoSize(threat);
-
-        // Don't engage targets another ship is already handling
-        // (Unless it's an incoming missile - then everyone who can shoot it, should)
-        // Todo: Needs more nuance... a missile inbound in 20 minutes does not require multiple ships to fire at it
         auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
-        if (threat.classification != ThreatClass::MISSILE_INBOUND) {
-            if (sharedPicture.IsAssigned(threat.pos)) return false;
-        }
-
-        // Claim the target before firing
         sharedPicture.Assign(threat.pos, entity);
 
+        int salvoCount = DetermineSalvoSize(threat);
         FireSalvo(registry, entity, transform, registry.get<Kinematics>(entity),
-            iff, mag, log, threat, mStats, selectedWeapon, distToTarget, salvoCount);
+                     iff, mag, log, threat,
+                     *eval.missileStats, eval.missileStats->name, eval.distanceToTarget, salvoCount);
 
         return true;
     }
@@ -292,8 +325,8 @@ void Systems::CombatSystem(entt::registry& registry) {
 
         // Loop through the sorted tracks at the pointer
         for (const RadarTrack& threat : *tracks) {
-            if (ProcessThreat(registry, entity, transform, iff, mag, log, threat)) {
-                break;
+            if (TryEngageThreat(registry, entity, transform, iff, mag, log, threat)) {
+                break; // We've fired at a inbound threat
             }
         }
     });
