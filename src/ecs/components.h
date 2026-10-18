@@ -2,6 +2,10 @@
 #include "../utils/MathUtils.h"
 #include "../models/TacticalData.h"
 
+// ============================
+// === ENUMS & STATUS CODES ===
+// ============================
+
 enum class EngagementStatus {
     ReadyToEngage,
     TrackUnconfirmed,
@@ -15,17 +19,11 @@ enum class EngagementStatus {
 };
 
 enum class TacticalState {
-    TRANSIT,
-    PATROL,
-    INTERCEPT,
-    STANDOFF,
-    DEFEND
+    TRANSIT, PATROL, INTERCEPT, STANDOFF,  DEFEND
 };
 
 enum class GuidancePhase {
-    MIDCOURSE_DATALINK,
-    TERMINAL_PITBULL,
-    INERTIAL_BLIND
+    MIDCOURSE_DATALINK, TERMINAL_PITBULL, INERTIAL_BLIND
 };
 
 enum class ThreatClass {
@@ -33,25 +31,24 @@ enum class ThreatClass {
     SURFACE_SHIP,       // Slow, large RCS, at sea level
     AIRCRAFT,           // Fast, airborne, medium RCS
     MISSILE_INBOUND,    // Very fast, tiny RCS, closing rapidly, low altitude
-    FRIENDLY            // IFF confirmed friendly(future)
+    FRIENDLY            // IFF confirmed friendly
 };
 
-struct EngagementEvaluationResult {
-    EngagementStatus status = EngagementStatus::ReadyToEngage;
-    const MissileStats* missileStats = nullptr;
-    float distanceToTarget = 0.0f;
-};
-
+// ==============================
+// === QUERY & RESULT STRUCTS ===
+// ==============================
 struct DeadTag {};
 
-// Where is it in the world?
+// =====================================
+// === PHYSICAL & SPATIAL COMPONENTS ===
+// =====================================
+
 struct Transform2D {
     MathUtils::Vec2 pos;
     float altitude;
     float heading;
 };
 
-// How is it moving?
 struct Kinematics {
     MathUtils::Vec2 velocity = {0.0f, 0.0f};
     MathUtils::Vec2 headingVector = {0.0f, 0.0f};
@@ -69,7 +66,7 @@ struct Aerodynamics {
     float currentFuelKg = 0.0f;
     float burnRateKgSec = 0.0f;
     float cruiseAltitudeMeters = 0.0f;
-    float maxManeuverGs = 0.0f;             // limits how fast the missile can climb or dive
+    float maxManeuverGs = 0.0f;
     float desiredAltitudeMeters = 0.0f;
 
     // --- Performance Optimization Cache ---
@@ -78,31 +75,34 @@ struct Aerodynamics {
     float cachedSpeedOfSound = 0.0f;
 };
 
-struct FlightData {
-    float maxFuelSeconds = 0.0f;
-    float currentFlightTime = 0.0f;
+// =====================================
+// === SENSORS & TRACKING COMPONENTS ===
+// =====================================
+struct MasterTrackTable {
+    uint32_t nextSystemTrackId = 1000;
+
+    // Global master list of fused tracks available to the entire task force datalink
+    struct SystemTrack {
+        uint32_t systemTrackId;
+        MathUtils::Vec2 fusedPos;
+        MathUtils::Vec2 fusedVel;
+        float altitude;
+        ThreatClass classification;
+        float confidence;
+        float ageSec;
+    };
+
+    std::unordered_map<uint32_t, SystemTrack> activeSystemTracks;
+
+    uint32_t AllocateTrackId() {
+        return nextSystemTrackId++;
+    }
+
+    void Clear() {
+        activeSystemTracks.clear();
+    }
 };
 
-struct Warhead {
-    float yieldDamage = 0.0f;
-    float lethalRadiusNM = 0.0f;
-    float lethalRadiusNmSq = 0.0f;
-
-    // -- Logging & PK Variables ---
-    float baseReliability = 0.90f;          // Mechanical chance the missile doesn't just break
-    std::string weaponId = "";              // Remembering what type of missile it is
-    entt::entity shooter { entt::null }; // Remembering who fired it
-};
-
-struct Hull {
-    float currentHP = 100.0f;
-};
-// Who is it? (Identification Friend or Foe)
-struct IFF {
-    bool isHostile = true;
-};
-
-// Can it see?
 struct RadarEmitter {
     float rangeNM = 0.0f;
     float rangeNmSq = 0.0f;
@@ -110,55 +110,93 @@ struct RadarEmitter {
     float timeSinceLastScan = 0.0f;
 };
 
-// Does it have a radar signature?
 struct RadarSignature {
     float rcs = 0.0f;  // Radar Cross-Section (m^2)
     float rcsFourthRoot = 0.0f;
 };
 
-// A pure physics return from a radar bounce
 struct RadarTrack {
+    uint32_t systemTrackId = 0;  // Linked to the MasterTrackTable ID
     MathUtils::Vec2 pos;
     MathUtils::Vec2 vel;
     float altitude = 0.0f;
     float ageSec = 0.0f;
     bool hasVelocity = false;
 
-    float speedKnots       = 0.0f;   // Derived from vel magnitude each update
-    float closingSpeedKnots = 0.0f;  // Positive = closing on observer, negative = opening
-    float timeToImpactSec  = -1.0f;  // -1 means not on intercept course
+    float speedKnots = 0.0f;                                        // Derived from vel magnitude each update
+    float closingSpeedKnots = 0.0f;                                 // Positive = closing on observer, negative = opening
+    float timeToImpactSec = -1.0f;                                  // -1 means not on intercept course
     ThreatClass classification = ThreatClass::UNKNOWN;
-    float threatScore      = 0.0f;   // Higher = more urgent
+    float threatScore = 0.0f;                                       // Higher = more urgent
     float consistentObservationSec = 0.0f;
 };
 
 struct SharedThreatPicture {
-    std::unordered_map<uint32_t, entt::entity> engagementsAssignments;
+    // Maps System Track ID -> Shooter Entity assigned to engage it
+    std::unordered_map<uint32_t, entt::entity> trackAssignments;
 
-    // Simple position hash for correlation (1 NM resolution)
-    static uint32_t HashPos(MathUtils::Vec2 pos) {
-        int ix = static_cast<int>(pos.x);
-        int iy = static_cast<int>(pos.y);
-        return static_cast<uint32_t>((ix * 73856093) ^ (iy * 19349663));
+    bool IsAssigned(uint32_t systemTrackId) const {
+        return trackAssignments.find(systemTrackId) != trackAssignments.end();
     }
 
-    bool IsAssigned(MathUtils::Vec2 threatPos) const {
-        uint32_t key = HashPos(threatPos);
-        auto it = engagementsAssignments.find(key);
-        if (it == engagementsAssignments.end()) return false;
-        return true;
+    void Assign(uint32_t systemTrackId, entt::entity shooter) {
+        trackAssignments[systemTrackId] = shooter;
     }
 
-    void Assign(MathUtils::Vec2 threatPos, entt::entity shooter) {
-        engagementsAssignments[HashPos(threatPos)] = shooter;
-    }
-
-    void Clear() { engagementsAssignments.clear(); }
+    void Clear() { trackAssignments.clear(); }
 };
-// Struct to hold successful radar pings
+
 struct RadarDetectionData {
     // Map of [Observer ID] -> [List of Target Coordinates]
     std::unordered_map<entt::entity, std::vector<RadarTrack>> activeTracks;
+};
+
+// =============================================
+// === COMBAT, WEAPONS & DOCTRINE COMPONENTS ===
+// =============================================
+
+struct Hull {
+    float currentHP = 100.0f;
+};
+
+struct IFF {
+    bool isHostile = true;
+};
+
+struct Warhead {
+    float yieldDamage = 0.0f;
+    float lethalRadiusNM = 0.0f;
+    float lethalRadiusNmSq = 0.0f;
+    float baseReliability = 0.90f;
+    std::string weaponId;
+    entt::entity shooter { entt::null };
+};
+
+struct Magazine {
+    std::unordered_map<std::string, int> maxAmmo;
+    std::unordered_map<std::string, int> currentAmmo;
+    float fireCooldown = 0.0f;
+};
+
+struct ActiveEngagement {
+    uint32_t systemTrackId = 0;
+    entt::entity missileEntity = entt::null;
+    float timeFiredSec = 0.0f;
+    bool missileAlive = true;
+};
+
+struct EngagementLog {
+    std::vector<ActiveEngagement> current;
+    int totalMissilesFired = 0;
+};
+
+// ================================
+// === GUIDANCE & AI COMPONENTS ===
+// ================================
+
+struct FlightData {
+    float maxFuelSeconds = 0.0f;
+    float currentFlightTime = 0.0f;
 };
 
 struct SeekerHead {
@@ -169,18 +207,11 @@ struct SeekerHead {
     MathUtils::Vec2 targetPos = { 0.0f, 0.0f };
     MathUtils::Vec2 targetVel = {0.0f, 0.0f};
     float targetAltitude = 0.0f;
-    bool isInterceptor = false; // Determines terminal-phase altitude behavior
+    bool isInterceptor = false;
     float timeSinceLastCorrelation = 0.0f;
     float timeSinceLaunchSec = 0.0f;
     float maxLateralGs = 0.0f;
     bool hasLiveTarget = true;
-};
-
-// What weapons are currently loaded, and can we fire
-struct Magazine {
-    std::unordered_map<std::string, int> maxAmmo;
-    std::unordered_map<std::string, int> currentAmmo;
-    float fireCooldown = 0.0f;
 };
 
 struct AutonomousGuidance {
@@ -193,18 +224,4 @@ struct AutonomousGuidance {
     bool hasTarget = false;
     bool pendingEngagement = false;
     float reactionTimer = 0.0f;
-};
-
-struct ActiveEngagement {
-    MathUtils::Vec2 targetPos;       // Where we were aiming when we fired
-    MathUtils::Vec2 targetVel;       // Estimated velocity at time of firing
-    entt::entity missileEntity;      // The specific missile we fired
-    ThreatClass targetClass;         // What we thought it was
-    float timeFiredSec = 0.0f;       // Simulation time when fired
-    bool missileAlive = true;        // Track if our shot is still flying
-};
-
-struct EngagementLog {
-    std::vector<ActiveEngagement> current;
-    int totalMissilesFired = 0;      // For Doctrine decisions (ammo awareness)
 };

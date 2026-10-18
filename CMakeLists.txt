@@ -38,6 +38,7 @@ add_executable(${PROJECT_NAME} ${SOURCES}
         src/ecs/Systems.cpp
         src/ecs/Events.h
         src/ecs/systems/LoggingSystem.cpp
+        src/ecs/systems/SensorFusionSystem.cpp
 )
 
 

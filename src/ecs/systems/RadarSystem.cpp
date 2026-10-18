@@ -1,5 +1,5 @@
 #include "../Systems.h"
-#include "../Components.h"
+#include "../components.h"
 
 #include "../../core/Constants.h"
 #include "../../core/Physics.h"

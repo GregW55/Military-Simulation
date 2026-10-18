@@ -9,6 +9,13 @@
 #include <vector>
 
 namespace {
+    struct EngagementEvaluationResult {
+        EngagementStatus status = EngagementStatus::ReadyToEngage;
+        const MissileStats* missileStats = nullptr;
+        std::string weaponKey;
+        float distanceToTarget = 0.0f;
+    };
+    
     void PruneDeadEngagements(entt::registry& registry) {
         for (auto [entity, log] : registry.view<EngagementLog>().each()) {
 
@@ -48,16 +55,11 @@ namespace {
         return ""; // No ammo at all
     }
 
-    int CountActiveShotsAgainst(const EngagementLog& log, const RadarTrack& threat, float currentSimTime) {
+    int CountActiveShotsAgainst(const EngagementLog& log, uint32_t systemTrackId) {
         int count = 0;
         for (const auto& eng : log.current) {
             if (!eng.missileAlive) continue;
-            float timeSinceFired = currentSimTime - eng.timeFiredSec;
-
-            MathUtils::Vec2 predictedThreatPos = MathUtils::ExtrapolatePosition(eng.targetPos, threat.vel, timeSinceFired);
-
-            float dist = MathUtils::GetDistance(predictedThreatPos, threat.pos);
-            if (dist < DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM) count++;
+            if (eng.systemTrackId == systemTrackId) count++;
         }
         return count;
     }
@@ -174,10 +176,8 @@ namespace {
             }
 
             log.current.push_back({
-                threat.pos,
-                threat.vel,
+                threat.systemTrackId,
                 missileEntity,
-                threat.classification,
                 Systems::GetSimTime(registry),
                 true});
 
@@ -205,7 +205,7 @@ namespace {
         }
 
         // --- Shoot-Look-Shoot Logic ---
-        int activeShots = CountActiveShotsAgainst(log, threat, Systems::GetSimTime(registry));
+        int activeShots = CountActiveShotsAgainst(log, threat.systemTrackId);
         if (activeShots >= MAX_SHOTS_PER_THREAT ||
            (activeShots == 1 && threat.timeToImpactSec > MAX_TTI_FOR_SECOND_SHOT_SEC)) {
             result.status = EngagementStatus::MaxShotsInFlight;
@@ -219,6 +219,7 @@ namespace {
         }
 
         // Assign the pointer once; we know it's valid past this point
+        result.weaponKey = selectedWeapon;
         result.missileStats = &TacticalDatabase::GetMissile(selectedWeapon);
         result.distanceToTarget = MathUtils::GetDistance(transform.pos, threat.pos);
 
@@ -231,8 +232,8 @@ namespace {
             return result;
         }
 
-        int currentAmmo = mag.currentAmmo.at(result.missileStats->name);
-        int maxAmmo = mag.maxAmmo.at(result.missileStats->name);
+        int currentAmmo = mag.currentAmmo.at(selectedWeapon);
+        int maxAmmo = mag.maxAmmo.at(selectedWeapon);
         int reserveThreshold = std::max(1, static_cast<int>(maxAmmo * MIN_AMMO_RESERVE_RATIO));
 
         if (currentAmmo <= reserveThreshold && threat.classification != ThreatClass::MISSILE_INBOUND) {
@@ -243,7 +244,7 @@ namespace {
         // --- Datalink check to see if we're already targeting this ---
         // Todo: Needs more nuance... a missile inbound in 20 minutes does not require multiple ships to fire at it
         auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
-        if (threat.classification != ThreatClass::MISSILE_INBOUND && sharedPicture.IsAssigned(threat.pos)) {
+        if (threat.classification != ThreatClass::MISSILE_INBOUND && sharedPicture.IsAssigned(threat.systemTrackId)) {
             result.status = EngagementStatus::TargetAlreadyAssigned;
             return result;
         }
@@ -266,12 +267,12 @@ namespace {
         if (eval.status != EngagementStatus::ReadyToEngage) return false;
 
         auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
-        sharedPicture.Assign(threat.pos, entity);
+        sharedPicture.Assign(threat.systemTrackId, entity);
 
         int salvoCount = DetermineSalvoSize(threat);
         FireSalvo(registry, entity, transform, registry.get<Kinematics>(entity),
                      iff, mag, log, threat,
-                     *eval.missileStats, eval.missileStats->name, eval.distanceToTarget, salvoCount);
+                     *eval.missileStats, eval.weaponKey, eval.distanceToTarget, salvoCount);
 
         return true;
     }
