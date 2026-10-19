@@ -11,6 +11,7 @@ enum class EngagementStatus {
     TrackUnconfirmed,
     TrackStale,
     NoCompatibleWeapon,
+    WeaponOnCooldown,
     OutOfRange,
     BelowMinRange,
     MaxShotsInFlight,
@@ -122,6 +123,7 @@ struct RadarTrack {
     float altitude = 0.0f;
     float ageSec = 0.0f;
     bool hasVelocity = false;
+    bool isMissing = false;
 
     float speedKnots = 0.0f;                                        // Derived from vel magnitude each update
     float closingSpeedKnots = 0.0f;                                 // Positive = closing on observer, negative = opening
@@ -147,8 +149,11 @@ struct SharedThreatPicture {
 };
 
 struct RadarDetectionData {
-    // Map of [Observer ID] -> [List of Target Coordinates]
+    // Persistent tracks per observer
     std::unordered_map<entt::entity, std::vector<RadarTrack>> activeTracks;
+
+    // Transient pings generated this frame by SensorSystem, consumed by TrackingSystem
+    std::unordered_map<entt::entity, std::vector<RadarTrack>> framePings;
 };
 
 // =============================================
@@ -200,10 +205,11 @@ struct FlightData {
 };
 
 struct SeekerHead {
-    entt::entity datalinkSource { entt::null };
+    entt::entity shooter { entt::null };
     SeekerType type;
     float rangeNM = 0.0f;
     GuidancePhase phase { GuidancePhase::MIDCOURSE_DATALINK };
+    uint32_t targetSystemTrackId = 0;
     MathUtils::Vec2 targetPos = { 0.0f, 0.0f };
     MathUtils::Vec2 targetVel = {0.0f, 0.0f};
     float targetAltitude = 0.0f;

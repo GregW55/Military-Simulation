@@ -15,8 +15,11 @@ namespace {
     // ========================
     // === MISSILE GUIDANCE ===
     // ========================
-    RadarTrack* FindTerminalTrack(SeekerHead& seeker, Transform2D& trans,
-                                  Kinematics& kin, std::vector<RadarTrack>& myTracks)
+    RadarTrack* FindTerminalTrack(
+        SeekerHead& seeker,
+        Transform2D& trans,
+        Kinematics& kin,
+        std::vector<RadarTrack>& myTracks)
     {
         // Where the target we were assigned should be by now, if it kept its course
         const MathUtils::Vec2 expectedTargetPos =
@@ -26,6 +29,9 @@ namespace {
         RadarTrack* best = nullptr;
 
         for (auto& track : myTracks) {
+            // Do not silently change the missile's assigned target.
+            if (seeker.targetSystemTrackId != 0 && track.systemTrackId != seeker.targetSystemTrackId) continue;
+
             const float distToTrack = MathUtils::GetDistance(trans.pos, track.pos);
             if (distToTrack < 0.001f) continue;
 
@@ -47,38 +53,14 @@ namespace {
         return nullptr;
     }
 
-    void RetargetTerminalMissile(entt::registry& registry, entt::entity entity, SeekerHead& seeker) {
-        bool missileIsHostile = registry.get<IFF>(entity).isHostile;
-        RadarTrack* bestNetworkTarget = nullptr;
-        float bestScore = -1.0f;
-
-        auto& networkDetectionData = registry.ctx().get<RadarDetectionData>();
-        auto radarShips = registry.view<RadarEmitter, IFF>();
-        for (auto observer : radarShips) {
-            if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
-            for (auto& track : networkDetectionData.activeTracks[observer]) {
-                if (track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) continue;
-                if (track.consistentObservationSec < 1.0f) continue;
-                if (track.threatScore > bestScore) {
-                    bestScore = track.threatScore;
-                    bestNetworkTarget = &track;
-                }
-            }
-        }
-
-        if (bestNetworkTarget) {
-            seeker.targetPos = bestNetworkTarget->pos;
-            seeker.targetVel = bestNetworkTarget->vel;
-            seeker.targetAltitude = bestNetworkTarget->altitude;
-            seeker.timeSinceLastCorrelation = 0.0f;
-            seeker.hasLiveTarget = true;
-        } else {
-            Systems::DestroyMissile(registry, entity, MissileEventType::SELF_DESTRUCT_NO_TARGET);
-        }
-    }
-
-    void UpdateMidcourseGuidance( entt::registry& registry, entt::entity entity,
-            Transform2D& trans, Kinematics& kin, SeekerHead& seeker, float deltaTime) {
+    void UpdateMidcourseGuidance(
+        entt::registry& registry,
+        entt::entity entity,
+        Transform2D& trans,
+        Kinematics& kin,
+        SeekerHead& seeker,
+        float deltaTime)
+    {
         seeker.timeSinceLaunchSec += deltaTime;
         bool missileIsHostile = registry.get<IFF>(entity).isHostile;
 
@@ -93,14 +75,34 @@ namespace {
             if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
 
             for (auto& track : detectionData.activeTracks[observer]) {
-                const MathUtils::Vec2 predictedTargetPos = MathUtils::ExtrapolatePosition(
-                    seeker.targetPos, seeker.targetVel, seeker.timeSinceLastCorrelation);
+                if (track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC)
+                    continue;
 
-                float d = MathUtils::GetDistance(predictedTargetPos, track.pos);
-                if (d < closestDist) {
-                    closestDist = d;
-                    best = &track;
+                if (track.consistentObservationSec < MIN_OBSERVATION_TIME_SEC)
+                    continue;
+
+                const MathUtils::Vec2 predictedTargetPos =
+                    MathUtils::ExtrapolatePosition(
+                        seeker.targetPos,
+                        seeker.targetVel,
+                        seeker.timeSinceLastCorrelation);
+
+                const float d = MathUtils::GetDistance(predictedTargetPos, track.pos);
+
+                if (d >= closestDist) continue;
+
+                // If the radar has a velocity estimate, reject implausible changes
+                if (track.hasVelocity && MathUtils::VelocityDifferenceKnots(
+                        track.vel, seeker.targetVel) > MAX_PLAUSIBLE_VEL_CHANGE_KNOTS) {
+                    continue;
                 }
+
+                // Prefer the original system track when it is still available
+                if (seeker.targetSystemTrackId != 0 && track.systemTrackId != seeker.targetSystemTrackId) continue;
+
+                closestDist = d;
+                best = &track;
+
             }
         }
         if (best) {
@@ -148,13 +150,21 @@ namespace {
             }
     }
 
-    void UpdateTerminalGuidance(entt::registry& registry, entt::entity entity,
-                Transform2D& trans, Kinematics& kin, SeekerHead& seeker, float deltaTime) {
+    void UpdateTerminalGuidance(
+        entt::registry& registry,
+        entt::entity entity,
+        Transform2D& trans,
+        Kinematics& kin,
+        SeekerHead& seeker,
+        float deltaTime)
+    {
         auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[entity];
 
         bool foundCorrelatedTrack = false;
+
         if (!myTracks.empty()) {
             RadarTrack* best = FindTerminalTrack(seeker, trans, kin, myTracks);
+
             if (best) {
                 seeker.targetPos = best->pos;
                 seeker.targetVel = best->vel;
@@ -162,8 +172,9 @@ namespace {
                 seeker.timeSinceLastCorrelation = 0.0f;
                 foundCorrelatedTrack = true;
             }
-            seeker.hasLiveTarget = foundCorrelatedTrack;
         }
+
+        seeker.hasLiveTarget = foundCorrelatedTrack;
         if (foundCorrelatedTrack) {
             float maxTurnRateDeg = MathUtils::GetMaxTurnRateDegSec(kin.currentSpeedKnots, seeker.maxLateralGs);
             float turnRateDeg = MathUtils::CalculateProNavTurnRate(
@@ -175,10 +186,36 @@ namespace {
             kin.headingVector.x = std::cos(currentAngle * DEG_TO_RAD);
             kin.headingVector.y = std::sin(currentAngle * DEG_TO_RAD);
         } else {
+            seeker.hasLiveTarget = false;
             seeker.timeSinceLastCorrelation += deltaTime;
 
+            // Keep steering toward the extrapolated last-known target.
+            const MathUtils::Vec2 predictedTargetPos =
+                MathUtils::ExtrapolatePosition(
+                    seeker.targetPos,
+                    seeker.targetVel,
+                    seeker.timeSinceLastCorrelation);
+
+            const MathUtils::Vec2 desiredHeading = MathUtils::GetDirection(trans.pos, predictedTargetPos);
+
+            const float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
+
+            const float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
+
+            const float angleDiff = MathUtils::GetShortestAngleDiff(currentAngle, desiredAngle);
+
+            const float maxTurnRateDeg = MathUtils::GetMaxTurnRateDegSec(kin.currentSpeedKnots, seeker.maxLateralGs);
+
+            const float maxStep = maxTurnRateDeg * deltaTime;
+            const float clampedStep = std::clamp(angleDiff, -maxStep, maxStep);
+
+            const float newAngle = currentAngle + clampedStep;
+
+            kin.headingVector.x = std::cos(newAngle * DEG_TO_RAD);
+            kin.headingVector.y = std::sin(newAngle * DEG_TO_RAD);
+
             if (seeker.timeSinceLastCorrelation > DATALINK_TIMEOUT_SEC) {
-                RetargetTerminalMissile(registry, entity, seeker);
+                seeker.phase = GuidancePhase::INERTIAL_BLIND;
             }
         }
     }

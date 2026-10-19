@@ -172,7 +172,8 @@ void AegisEngine::SpawnScenarioUnits() {
 }
 
 void AegisEngine::Update(float deltaTime) {
-    Systems::RadarSystem(registry, deltaTime);
+    Systems::SensorSystem(registry, deltaTime);
+    Systems::TrackingSystem(registry, deltaTime);
     Systems::CombatSystem(registry);
     Systems::GuidanceSystem(registry, deltaTime);
     Systems::MovementSystem(registry, deltaTime);

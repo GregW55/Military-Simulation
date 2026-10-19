@@ -65,14 +65,12 @@ constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4500.0f;
 constexpr float TRACK_MAX_SPEED_NM_S = MAX_PLAUSIBLE_SPEED_KNOTS * KNOTS_TO_NM_PER_SEC;
 constexpr float MAX_PLAUSIBLE_VEL_CHANGE_KNOTS = 800.0f;
 
-// Timeouts & Freshness
 constexpr float TRACK_DELETION_TIMEOUT_SEC = 5.0f;                      // Removed entirely after unrefreshed
 constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 2.0f;                  // Must be fresher than this to engage/lock
 
-// Combat
 constexpr float MIN_OBSERVATION_TIME_SEC = 1.0f;
 constexpr float MAX_TTI_FOR_SECOND_SHOT_SEC = 30.0f;
-constexpr int MAX_SHOTS_PER_THREAT = 2;
+constexpr int   MAX_SHOTS_PER_THREAT = 2;
 constexpr float MIN_AMMO_RESERVE_RATIO = 0.15f;                         // ~15% max ammo reserved for incoming missiles
 
 // ==========================================
@@ -98,6 +96,7 @@ constexpr float FUSE_ALTITUDE_TOLERANCE_METERS = 50.0f;
 // 7. SHIPS & ENGAGEMENTS
 // ==========================================
 constexpr float MIN_ENGAGEMENT_RANGE_NM = 0.5f;
+constexpr float WEAPON_COOLDOWN = 0.5f;
 
 
 // ==========================================

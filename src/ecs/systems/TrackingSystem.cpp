@@ -1,8 +1,6 @@
 #include "../Systems.h"
 #include "../components.h"
-
 #include "../../core/Constants.h"
-#include "../../core/Physics.h"
 #include "../../utils/ThreatAnalysis.h"
 
 #include <algorithm>
@@ -11,21 +9,6 @@
 
 namespace
 {
-    // ============================================================
-    // Radar scan timing
-    // ============================================================
-
-    bool ShouldBeginRadarScan(RadarEmitter& radar, float deltaTime) {
-        radar.timeSinceLastScan += deltaTime;
-
-        if (radar.timeSinceLastScan < radar.scanRateSec) return false;
-
-        radar.timeSinceLastScan = 0.0f;
-
-        return true;
-    }
-
-
     // ============================================================
     // Track maintenance
     // ============================================================
@@ -55,66 +38,6 @@ namespace
         }
     }
 
-
-    // ============================================================
-    // Radar scanning
-    // ============================================================
-
-    std::vector<RadarTrack> ScanForTargets(
-        entt::registry& registry,
-        entt::entity observer)
-    {
-        auto& map = registry.ctx().get<MapProjection>();
-
-        auto& obsTransform = registry.get<Transform2D>(observer);
-        auto& obsRadar = registry.get<RadarEmitter>(observer);
-        auto& obsIFF = registry.get<IFF>(observer);
-
-        std::vector<RadarTrack> pings;
-
-        auto targets = registry.view<Transform2D, RadarSignature, IFF>();
-
-        for (auto target : targets)
-        {
-            if (observer == target) continue;
-
-            auto& tgtTransform = targets.get<Transform2D>(target);
-            auto& tgtSig = targets.get<RadarSignature>(target);
-            auto& tgtIFF = targets.get<IFF>(target);
-
-            // Ignore friendly targets.
-            if (obsIFF.isHostile == tgtIFF.isHostile)
-                continue;
-
-            float distSq = MathUtils::GetDistanceSq(obsTransform.pos, tgtTransform.pos);
-
-            // Outside radar range.
-            if (distSq > obsRadar.rangeNmSq) continue;
-
-            bool detected = Physics::CanRadarDetectTarget(
-                map,
-                obsTransform.pos,
-                obsTransform.altitude,
-                obsRadar.rangeNM,
-                tgtTransform.pos,
-                tgtTransform.altitude,
-                tgtSig.rcsFourthRoot,
-                std::sqrt(distSq)
-            );
-
-            if (!detected) continue;
-
-            RadarTrack ping;
-
-            ping.pos = tgtTransform.pos;
-            ping.altitude = tgtTransform.altitude;
-
-            pings.push_back(ping);
-        }
-
-        return pings;
-    }
-
     // ============================================================
     // Existing track update
     // ============================================================
@@ -138,6 +61,7 @@ namespace
             track.vel = calculatedVel;
             track.speedKnots = derivedSpeedKnots;
             track.hasVelocity = true;
+            track.isMissing = false;
             track.pos = ping.pos;
             track.altitude = ping.altitude;
             track.ageSec = 0.0f;
@@ -183,8 +107,8 @@ namespace
         track.vel = {0.0f, 0.0f};
         track.altitude = ping.altitude;
         track.ageSec = 0.0f;
-
         track.hasVelocity = false;
+        track.isMissing = false;
 
         track.speedKnots = 0.0f;
         track.closingSpeedKnots = 0.0f;
@@ -206,9 +130,9 @@ namespace
         return TRACK_POSITION_TOLERANCE_NM + 0.5f * TRACK_MAX_ACCEL_NM_S2 * (track.ageSec * track.ageSec);
     }
 
-    // ============================================================
-    // Correlate all pings for one observer
-    // ============================================================
+    // ============================================
+    // === Correlate all pings for one observer ===
+    // ============================================
 
     void CorrelatePings(entt::registry& registry, entt::entity observer, const std::vector<RadarTrack>& pings)
     {
@@ -244,12 +168,25 @@ namespace
             if (pingUsed[c.ping] || trackUsed[c.track]) continue;
             pingUsed[c.ping] = 1;
             trackUsed[c.track] = 1;
+            tracks[c.track].isMissing = false;
             UpdateExistingTrack(tracks[c.track], pings[c.ping], observerPos);
         }
 
+        // Save the original track count before adding new ones
+        const size_t originalTrackCount = tracks.size();
+
         // Pings nobody claimed become new tracks
-        for (size_t p = 0; p < pings.size(); ++p) {
-            if (!pingUsed[p]) tracks.push_back(CreateNewTrack(pings[p]));
+        for (auto [p, ping] : pings | std::views::enumerate) {
+            if (!pingUsed[p]) {
+                tracks.push_back(CreateNewTrack(pings[p]));
+            }
+        }
+
+        // Handle missing tracks only for the original pre-existing tracks
+        for (auto [t, track] : tracks | std::views::take(originalTrackCount) | std::views::enumerate) {
+            if (!trackUsed[t]) {
+                tracks[t].isMissing = true;
+            }
         }
     }
 }
@@ -259,24 +196,15 @@ namespace
 // RADAR SYSTEM
 // ================================================================
 
-void Systems::RadarSystem(entt::registry& registry, float deltaTime)
+void Systems::TrackingSystem(entt::registry& registry, float deltaTime)
 {
     auto& detectionData = registry.ctx().get<RadarDetectionData>();
 
     // First age and remove old tracks.
     UpdateTrackAges(registry, detectionData, deltaTime);
 
-    auto observers = registry.view<Transform2D, RadarEmitter, IFF>();
-
-    for (auto observer : observers) {
-        auto& radar = observers.get<RadarEmitter>(observer);
-
-        // Radar is ready to scan
-        if (ShouldBeginRadarScan(radar, deltaTime)) {
-            // Get the actual radar detections.
-            std::vector<RadarTrack> pings = ScanForTargets(registry, observer);
-
-            // Match those detections against this observer's existing tracks.
+    for (const auto& [observer, pings] : detectionData.framePings) {
+        if (registry.valid(observer)) {
             CorrelatePings(registry, observer, pings);
         }
     }

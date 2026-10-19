@@ -15,7 +15,7 @@ namespace {
         std::string weaponKey;
         float distanceToTarget = 0.0f;
     };
-    
+
     void PruneDeadEngagements(entt::registry& registry) {
         for (auto [entity, log] : registry.view<EngagementLog>().each()) {
 
@@ -103,13 +103,15 @@ namespace {
             mStats.seekerType,
             mStats.seekerRangeNM,
             GuidancePhase::MIDCOURSE_DATALINK,
+            target.systemTrackId,
             target.pos,
             target.vel,
             target.altitude,
             mStats.isInterceptor,
             0.0f, // Time since last correlation
             0.0f, // Time since launch (seconds)
-            mStats.maxLateralGs
+            mStats.maxLateralGs,
+            true
             );
         registry.emplace<Transform2D>(missile,
             shooterTransform.pos, shooterTransform.altitude, shooterTransform.heading);
@@ -183,6 +185,10 @@ namespace {
 
             log.totalMissilesFired++;
             mag.currentAmmo[selectedWeapon]--;
+
+            // Enforce a separation delay and break the frame loop
+            mag.fireCooldown = WEAPON_COOLDOWN;
+            break;
         }
     }
 
@@ -194,6 +200,11 @@ namespace {
         const RadarTrack& threat)
     {
         EngagementEvaluationResult result;
+
+        if (mag.fireCooldown > 0.0f) {
+            result.status = EngagementStatus::WeaponOnCooldown;
+            return result;
+        }
 
         if (threat.consistentObservationSec < MIN_OBSERVATION_TIME_SEC) {
             result.status = EngagementStatus::TrackUnconfirmed;
@@ -315,6 +326,12 @@ void Systems::CombatSystem(entt::registry& registry) {
                         AutonomousGuidance& brain,
                         EngagementLog& log)
     {
+        // Tick down weapon firing cooldown
+        if (mag.fireCooldown > 0.0f) {
+            mag.fireCooldown -= fixedDelta;
+            if (mag.fireCooldown < 0.0f) mag.fireCooldown = 0.0f;
+        }
+
         if (brain.currentState != TacticalState::STANDOFF &&
             brain.currentState != TacticalState::DEFEND &&
             brain.currentState != TacticalState::INTERCEPT) return;

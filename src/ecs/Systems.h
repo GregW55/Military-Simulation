@@ -20,7 +20,9 @@ public:
     static void MovementSystem(entt::registry& registry, float deltaTime);
 
     // --- RADAR SYSTEM ---
-    static void RadarSystem(entt::registry& registry, float deltaTime);
+    static void SensorSystem(entt::registry& registry, float deltaTime);
+
+    static void TrackingSystem(entt::registry& registry, float deltaTime);
 
     // --- COMBAT SYSTEM ---
     static void CombatSystem(entt::registry& registry);

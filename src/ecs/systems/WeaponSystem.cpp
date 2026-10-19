@@ -11,12 +11,12 @@
 
 namespace {
     void ResolveShipDetonation(
-        entt::registry& registry,
+        entt::registry &registry,
         entt::entity missile,
         entt::entity target,
-        Warhead& warhead,
-        Kinematics& tKin,
-        RadarSignature& tSig,
+        Warhead &warhead,
+        Kinematics &tKin,
+        RadarSignature &tSig,
         float distNmSq)
     {
         float dynamicPk = warhead.baseReliability;
@@ -38,7 +38,7 @@ namespace {
 
         // Use a fallback RNG if the global one isn't injected yet, to prevent crashes
         std::mt19937 fallbackRng(std::random_device{}());
-        auto& rng = registry.ctx().contains<std::mt19937>() ? registry.ctx().get<std::mt19937>() : fallbackRng;
+        auto &rng = registry.ctx().contains<std::mt19937>() ? registry.ctx().get<std::mt19937>() : fallbackRng;
 
         std::uniform_real_distribution<float> distRoll(0.0f, 1.0f);
         float roll = distRoll(rng);
@@ -49,12 +49,13 @@ namespace {
         MissileEventType outcome;
 
         if (roll <= dynamicPk) {
-            auto& hull = registry.get<Hull>(target);
+            auto &hull = registry.get<Hull>(target);
             hull.currentHP -= warhead.yieldDamage;
             outcome = MissileEventType::HIT_SHIP;
 
             if (VERBOSE_COMBAT_LOG) {
-                std::cout << "[T=" << Systems::GetSimTime(registry) << "s] [IMPACT] Missile HIT entity " << (uint32_t)target <<"\n";
+                std::cout << "[T=" << Systems::GetSimTime(registry) << "s] [IMPACT] Missile HIT entity " << (uint32_t)
+                        target << "\n";
             }
 
             if (hull.currentHP <= 0.0f) registry.emplace_or_replace<DeadTag>(target);
@@ -63,7 +64,7 @@ namespace {
 
             if (VERBOSE_COMBAT_LOG) {
                 std::cout << "[T=" << Systems::GetSimTime(registry) << "s] [IMPACT] Missile MISSED entity "
-                << (uint32_t)target << " (Roll: " << roll << ", Required: " << dynamicPk << ")\n";
+                        << (uint32_t) target << " (Roll: " << roll << ", Required: " << dynamicPk << ")\n";
             }
         }
 
@@ -71,18 +72,18 @@ namespace {
     }
 
     bool CheckShipTargets(
-        entt::registry& registry,
+        entt::registry &registry,
         entt::entity missile,
-        Transform2D& mTrans,
-        Warhead& warhead,
-        IFF& mIFF,
-        const auto& shipTargets)
+        Transform2D &mTrans,
+        Warhead &warhead,
+        IFF &mIFF,
+        const auto &shipTargets)
     {
-        for (auto target : shipTargets) {
-            auto& tTrans = shipTargets.template get<Transform2D>(target);
-            auto& tIFF = shipTargets.template get<IFF>(target);
-            auto& tKin = shipTargets.template get<Kinematics>(target);
-            auto& tSig = shipTargets.template get<RadarSignature>(target);
+        for (auto target: shipTargets) {
+            auto &tTrans = shipTargets.template get<Transform2D>(target);
+            auto &tIFF = shipTargets.template get<IFF>(target);
+            auto &tKin = shipTargets.template get<Kinematics>(target);
+            auto &tSig = shipTargets.template get<RadarSignature>(target);
 
             if (mIFF.isHostile == tIFF.isHostile) continue;
 
@@ -101,21 +102,21 @@ namespace {
     }
 
     bool CheckMissileTargets(
-        entt::registry& registry,
+        entt::registry &registry,
         entt::entity missile,
-        Transform2D& mTrans,
-        Warhead& warhead,
-        IFF& mIFF,
-        const auto& missiles)
+        Transform2D &mTrans,
+        Warhead &warhead,
+        IFF &mIFF,
+        const auto &missiles)
     {
-        for (auto otherMissile : missiles) {
+        for (auto otherMissile: missiles) {
             if (otherMissile == missile) continue;
             if (registry.all_of<DeadTag>(otherMissile)) continue;
 
-            auto& oIFF = missiles.template get<IFF>(otherMissile);
+            auto &oIFF = missiles.template get<IFF>(otherMissile);
             if (mIFF.isHostile == oIFF.isHostile) continue;
 
-            auto& oTrans = missiles.template get<Transform2D>(otherMissile);
+            auto &oTrans = missiles.template get<Transform2D>(otherMissile);
             float distNmSq = MathUtils::GetDistanceSq(mTrans.pos, oTrans.pos);
             float altDiffMeters = std::abs(mTrans.altitude - oTrans.altitude);
 
@@ -125,8 +126,8 @@ namespace {
                 Systems::DestroyMissile(registry, otherMissile, MissileEventType::SHOT_DOWN, distNM);
 
                 if (VERBOSE_COMBAT_LOG) {
-                    std::cout << "[INTERCEPT] Missile " << (uint32_t)missile
-                              << " destroyed missile " << (uint32_t)otherMissile << "\n";
+                    std::cout << "[INTERCEPT] Missile " << (uint32_t) missile
+                            << " destroyed missile " << (uint32_t) otherMissile << "\n";
                 }
 
                 return true;
@@ -136,23 +137,20 @@ namespace {
     }
 }
 
-void Systems::ProximityFuseSystem(entt::registry& registry) {
+void Systems::ProximityFuseSystem(entt::registry &registry) {
     auto missiles = registry.view<Transform2D, Warhead, IFF>();
 
     auto shipTargets = registry.view<Transform2D, Hull, IFF, Kinematics, RadarSignature>();
 
-    for (auto missile : missiles) {
+    for (auto missile: missiles) {
         if (registry.all_of<DeadTag>(missile)) continue;
 
-        auto& mTrans = missiles.get<Transform2D>(missile);
-        auto& warhead = missiles.get<Warhead>(missile);
-        auto& mIFF = missiles.get<IFF>(missile);
+        auto &mTrans = missiles.get<Transform2D>(missile);
+        auto &warhead = missiles.get<Warhead>(missile);
+        auto &mIFF = missiles.get<IFF>(missile);
 
         if (CheckMissileTargets(registry, missile, mTrans, warhead, mIFF, missiles)) continue;
 
         CheckShipTargets(registry, missile, mTrans, warhead, mIFF, shipTargets);
-
-
-
     }
 }
