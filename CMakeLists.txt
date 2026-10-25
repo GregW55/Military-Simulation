@@ -4,7 +4,12 @@ project(ECS_sim)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ================================================
+# === DEPENDENCIES USED BY THE MAIN SIMULATION ===
+# ================================================
+
 include(FetchContent)
+
 FetchContent_Declare(
         raylib
         URL https://github.com/raysan5/raylib/archive/master.tar.gz
@@ -18,32 +23,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(json)
 
-file(GLOB_RECURSE SOURCES "src/*.cpp")
+# ==================================
+# === MAIN SIMULATION EXECUTABLE ===
+# ==================================
 
-add_executable(${PROJECT_NAME} ${SOURCES}
-        src/models/ScenarioData.h
-        src/utils/ScenarioParser.cpp
-        src/utils/ScenarioParser.h
-        src/utils/TacticalDataLoader.cpp
-        src/utils/TacticalDataLoader.h
-        src/core/AegisEngine.cpp
-        src/core/AegisEngine.h
-        src/utils/ThreatAnalysis.h
-        src/utils/MetricsLogger.h
-        src/ecs/systems/TrackingSystem.cpp
-        src/ecs/systems/CombatSystem.cpp
-        src/ecs/systems/GuidanceSystem.cpp
-        src/ecs/systems/MovementSystem.cpp
-        src/ecs/systems/WeaponSystem.cpp
-        src/ecs/Systems.cpp
-        src/ecs/Events.h
-        src/ecs/systems/LoggingSystem.cpp
-        src/ecs/systems/SensorFusionSystem.cpp
-        src/ecs/systems/SensorSystem.cpp
-)
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 
+add_executable(${PROJECT_NAME} ${SOURCES})
 
-# Assuming entt.hpp is located at external/entt.hpp
 target_include_directories(${PROJECT_NAME} PRIVATE
         external
         ${raylib_SOURCE_DIR}/src
@@ -54,10 +41,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
         nlohmann_json::nlohmann_json
 )
 
-# Find the directory where the C++ compiler (and its DLLs) lives
+# ===================================================
+# === MIN GW RUNTIME DLLS FOR THE MAIN SIMULATION ===
+# ===================================================
 get_filename_component(MINGW_BIN_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
 
-# Automatically copy all required MinGW runtime DLLs to the build output directory
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${MINGW_BIN_DIR}/libwinpthread-1.dll"
@@ -69,3 +57,55 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         "${MINGW_BIN_DIR}/libgcc_s_seh-1.dll"
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
 )
+
+# ===================
+# === GOOGLE TEST ===
+# ===================
+
+option(BUILD_TESTING "Build GoogleTest test targets" ON)
+
+if(BUILD_TESTING)
+
+    include(CTest)
+
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
+    )
+
+    FetchContent_MakeAvailable(googletest)
+
+    # --------------------------------------------------------
+    # RADAR TEST EXECUTABLE
+    # EXCLUDE_FROM_ALL means the normal build skips this target.
+    # --------------------------------------------------------
+
+    add_executable(RadarSystemTests EXCLUDE_FROM_ALL
+        tests/RadarSystemTests.cpp
+
+        src/ecs/systems/radar/SensorSystem.cpp
+        src/ecs/systems/radar/TrackingSystem.cpp
+        src/ecs/systems/radar/SensorFusionSystem.cpp
+
+        src/core/GeoEngine.cpp
+        src/utils/MathUtils.cpp
+    )
+
+    target_include_directories(RadarSystemTests PRIVATE
+        src
+        external
+        ${raylib_SOURCE_DIR}/src
+    )
+
+    target_compile_features(RadarSystemTests PRIVATE cxx_std_23)
+
+    target_link_libraries(RadarSystemTests PRIVATE
+        GTest::gtest_main
+        raylib
+        nlohmann_json::nlohmann_json
+    )
+
+    include(GoogleTest)
+    gtest_discover_tests(RadarSystemTests)
+
+endif()
