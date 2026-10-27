@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tuple>
+
 #include "../ecs/components.h"
 #include "../core/Constants.h"
 #include "MathUtils.h"
@@ -57,7 +59,6 @@ namespace TrackCorrelation {
         return TRACK_POSITION_TOLERANCE_NM + 0.5f * TRACK_MAX_ACCEL_NM_S2 * (track.ageSec * track.ageSec);
     }
 
-
     inline bool IsWithinGate(
         float distSq,
         float gateNM)
@@ -66,65 +67,84 @@ namespace TrackCorrelation {
     }
 
     inline bool IsCompatible(
-        const RadarTrack& source,       //    Ping         | local track
-        const RadarTrack& target,       //    local track  | global track
-        const SourceKind sourceKind)    //    Is source a ping or track
+        const RadarTrack& candidate,        //    Ping         | local track
+        const RadarTrack& track,            //    local track  | global track
+        const SourceKind sourceKind)        //    Is source a ping, or a track
     {
-        if (sourceKind == SourceKind::PING) {
-            if (target.ageSec <= 0.0001f) return true;
+        // Reject conflicting known classifications immediately
+        if (sourceKind == SourceKind::TRACK &&
+            candidate.classification != ThreatClass::UNKNOWN &&
+            track.classification != ThreatClass::UNKNOWN &&
+            candidate.classification != track.classification)
+        {
+            return false;
+        }
 
-            const MathUtils::Vec2 impliedVel =
-                MathUtils::VelocityBetweenPositions(
-                    target.latestPing,
-                    source.pos,
-                    target.ageSec);
-
-            const float impliedSpeedKnots = MathUtils::NmPerSecToKnots(MathUtils::Length(impliedVel));
-
-            if (impliedSpeedKnots > MAX_PLAUSIBLE_SPEED_KNOTS) return false;
-
-            if (target.hasVelocity) {
-                const float speedDelta = std::abs(impliedSpeedKnots - target.speedKnots);
-
-                if (speedDelta > 1000.0f) return false;
-
-                if (target.speedKnots > 0.0f && impliedSpeedKnots > 0.0f) {
-                    const float targetAngle = MathUtils::GetVectorDirectionDegrees(target.vel);
-
-                    const float sourceAngle = MathUtils::GetVectorDirectionDegrees(impliedVel);
-
-                    const float angleDiff = std::abs(MathUtils::GetShortestAngleDiff(targetAngle, sourceAngle));
-
-                    if (angleDiff > 30.0f) return false;
-                }
+        const auto [maxTurn, maxAccel, maxSpeed, maxAlt] = [&] {
+            switch (track.classification) {
+                case ThreatClass::SURFACE_SHIP:
+                    return std::tuple{MAX_SHIP_TURN_RATE_DEG_PER_SEC, MAX_SHIP_ACCEL_KNOTS_PER_SEC,
+                                      MAX_SHIP_SPEED_KTS, MAX_SHIP_ALTITUDE_M};
+                default: // missile limits are the loosest, so unknowns get them too
+                case ThreatClass::MISSILE_INBOUND:
+                    return std::tuple{MAX_MISSILE_TURN_RATE_DEG_PER_SEC, MAX_MISSILE_ACCEL_KNOTS_PER_SEC,
+                                      MAX_PLAUSIBLE_SPEED_KNOTS, MAX_MISSILE_ALTITUDE_M};
             }
-            // The pair passed the checks
-            // Not all checks need to pass. if (!target.hasVelocity) then only max plausible speed needs to be checked
+        }();
+
+        if (sourceKind == SourceKind::PING)
+        {
+            if (track.ageSec <= TRACK_MIN_ACTIONABLE_AGE_SEC) return false;
+
+            const MathUtils::Vec2 impliedVelocity =
+                    MathUtils::VelocityBetweenPositions(
+                        track.latestPing,
+                        candidate.pos,
+                        track.ageSec);
+
+            const float impliedSpeedKnots = MathUtils::NmPerSecToKnots(MathUtils::Length(impliedVelocity));
+
+            if (impliedSpeedKnots > maxSpeed) return false;
+            if (candidate.altitude > maxAlt) return false;
+
+            if (!track.hasVelocity) return true;
+
+            const float speedDelta = std::abs(impliedSpeedKnots - track.speedKnots);
+
+            if (speedDelta > maxAccel * track.ageSec) return false;
+
+            if (track.speedKnots > 0.0f && impliedSpeedKnots > 0.0f) {
+                const float trackAngle = MathUtils::GetVectorDirectionDegrees(track.vel);
+
+                const float candidateAngle = MathUtils::GetVectorDirectionDegrees(impliedVelocity);
+
+                const float angleDiff = std::abs(MathUtils::GetShortestAngleDiff(trackAngle, candidateAngle));
+
+                if (angleDiff > maxTurn * track.ageSec) return false;
+            }
+
             return true;
         }
 
-        if (sourceKind == SourceKind::TRACK) {
-            if (source.hasVelocity && target.hasVelocity)
+        if (sourceKind == SourceKind::TRACK)
+        {
+            if (!track.hasVelocity || !candidate.hasVelocity) return true;
+
+            if (!HasCompatiableVelocity(track.vel, candidate.vel)) return false;
+
+            if (MathUtils::LengthSq(candidate.vel) > 0.0f &&
+                MathUtils::LengthSq(track.vel) > 0.0f)
             {
-                if (!HasCompatiableVelocity(source.vel, target.vel)) return false;
+                const float candidateAngle = MathUtils::GetVectorDirectionDegrees(candidate.vel);
+                const float trackAngle = MathUtils::GetVectorDirectionDegrees(track.vel);
 
-                if (MathUtils::LengthSq(source.vel) > 0.0f &&
-                    MathUtils::LengthSq(target.vel) > 0.0f)
-                {
-                    const float sourceAngle = MathUtils::GetVectorDirectionDegrees(source.vel);
+                const float angleDiff = std::abs(
+                    MathUtils::GetShortestAngleDiff(trackAngle, candidateAngle));
 
-                    const float targetAngle = MathUtils::GetVectorDirectionDegrees(target.vel);
-
-                    const float angleDiff = std::abs(
-                        MathUtils::GetShortestAngleDiff(targetAngle, sourceAngle));
-
-                    if (angleDiff > 30.0f) return false;
-                }
+                if (angleDiff > TRACK_MAX_HEADING_DIFF_DEG) return false;
             }
-            // If velocity information is unavailable, allow the distance gate in GenerateCandidates to decide
             return true;
         }
-
         return false;
     }
 
@@ -138,21 +158,18 @@ namespace TrackCorrelation {
         const SourceKind sourceKind)
     {
         std::vector<Candidate> candidates;
+        candidates.reserve(sources.size());
 
-        for (std::size_t s = 0; s < sources.size(); ++s) {
-            for (std::size_t t = 0; t < targets.size(); ++t) {
+        for (std::size_t t = 0; t < targets.size(); ++t) {
+            const auto& target = GetTrack(targets[t]);
+            const float gateNM = GetTrackGateNM(target);                                    // Once per target
+
+            for (std::size_t s = 0; s < sources.size(); ++s) {
                 const auto& source = GetTrack(sources[s]);
-                const auto& target = GetTrack(targets[t]);
 
-                // Reject pairs that fail the system-specific checks
-                if (!IsCompatible(source, target, sourceKind)) continue;
-
-                // Apply the distance gate
                 const float distSq = MathUtils::GetDistanceSq(source.pos, target.pos);
-
-                const float gateNM = GetTrackGateNM(target);
-
-                if (!IsWithinGate(distSq, gateNM)) continue;
+                if (!IsWithinGate(distSq, gateNM)) continue;                                // Cheap check first
+                if (!IsCompatible(source, target, sourceKind)) continue;
 
                 candidates.push_back({distSq, s, t});
             }

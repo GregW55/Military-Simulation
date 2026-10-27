@@ -67,6 +67,7 @@ constexpr float MAX_PLAUSIBLE_VEL_CHANGE_KNOTS = 800.0f;
 
 constexpr float TRACK_DELETION_TIMEOUT_SEC = 5.0f;                      // Removed entirely after unrefreshed
 constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 2.0f;                  // Must be fresher than this to engage/lock
+constexpr float TRACK_MIN_ACTIONABLE_AGE_SEC = 0.0001f;
 
 constexpr float MIN_OBSERVATION_TIME_SEC = 1.0f;
 constexpr float MAX_TTI_FOR_SECOND_SHOT_SEC = 30.0f;
@@ -107,3 +108,19 @@ constexpr float MAX_SHIP_ALTITUDE_M = 40.0f;                            // Max a
 constexpr float MAX_SHIP_SPEED_KTS = 50.0f;                             // Max speed before reclassifying to UNKNOWN
 constexpr float MIN_AIRCRAFT_SPEED_KTS = 150.0f;                        // Threshold to reclassify as AIRCRAFT
 constexpr float MIN_MISSILE_SPEED_KTS = 250.0f;                         // Threshold to reclassify as MISSILE
+
+// =========================================================
+// === 9. KINEMATIC LIMITS BY CLASS (Correlation Gating) ===
+// =========================================================
+
+// Ships (speed/altitude limits are in section 8
+constexpr float MAX_SHIP_TURN_RATE_DEG_PER_SEC = 10.0f;
+constexpr float MAX_SHIP_ACCEL_KNOTS_PER_SEC = 2.0f;
+
+// Missiles (speed limit is MAX_PLAUSIBLE_SPEED_KNOTS)
+constexpr float MAX_MISSILE_TURN_RATE_DEG_PER_SEC = 90.0f;
+constexpr float MAX_MISSILE_ACCEL_KNOTS_PER_SEC = MAX_TRACKED_ACCEL_G * GRAVITY_MPS2 * KNOTS_PER_MPS;  // ~858
+constexpr float MAX_MISSILE_ALTITUDE_M = 30000.0f;
+
+// Track-vs-track: two sensors should roughly agree on heading
+constexpr float TRACK_MAX_HEADING_DIFF_DEG = 30.0f;
