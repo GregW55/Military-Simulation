@@ -26,10 +26,10 @@ namespace MathUtils {
     // ===========================
     // === NAVIGATION & ANGLES ===
     // ===========================
-    float GetAngleDegrees(Vec2 start, Vec2 end) noexcept {
-        Vec2 delta = Sub(end, start);
-        float rad = std::atan2f(delta.y, delta.x);
-        return rad * RAD_TO_DEG;
+    float GetVectorDirectionDegrees(Vec2 vector) noexcept {
+        const float radians = std::atan2f(vector.y, vector.x);
+        const float degrees = radians * RAD_TO_DEG;
+        return degrees;
     }
 
     float WrapAngle(float angle) noexcept {

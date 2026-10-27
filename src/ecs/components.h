@@ -79,31 +79,6 @@ struct Aerodynamics {
 // =====================================
 // === SENSORS & TRACKING COMPONENTS ===
 // =====================================
-struct MasterTrackTable {
-    uint32_t nextSystemTrackId = 1000;
-
-    // Global master list of fused tracks available to the entire task force datalink
-    struct SystemTrack {
-        uint32_t systemTrackId;
-        MathUtils::Vec2 fusedPos;
-        MathUtils::Vec2 fusedVel;
-        float altitude;
-        ThreatClass classification;
-        float confidence;
-        float ageSec;
-    };
-
-    std::unordered_map<uint32_t, SystemTrack> activeSystemTracks;
-
-    uint32_t AllocateTrackId() {
-        return nextSystemTrackId++;
-    }
-
-    void Clear() {
-        activeSystemTracks.clear();
-    }
-};
-
 struct RadarEmitter {
     float rangeNM = 0.0f;
     float rangeNmSq = 0.0f;
@@ -117,7 +92,8 @@ struct RadarSignature {
 };
 
 struct RadarTrack {
-    uint32_t systemTrackId = 0;  // Linked to the MasterTrackTable ID
+    mutable uint32_t globalTrackId = 0;  // Linked to the MasterTrackTable ID
+    MathUtils::Vec2 latestPing;
     MathUtils::Vec2 pos;
     MathUtils::Vec2 vel;
     float altitude = 0.0f;
@@ -134,7 +110,7 @@ struct RadarTrack {
 };
 
 struct SharedThreatPicture {
-    // Maps System Track ID -> Shooter Entity assigned to engage it
+    // Maps Global Track ID -> Shooter Entity assigned to engage it
     std::unordered_map<uint32_t, entt::entity> trackAssignments;
 
     bool IsAssigned(uint32_t systemTrackId) const {
@@ -154,6 +130,26 @@ struct RadarDetectionData {
 
     // Transient pings generated this frame by SensorSystem, consumed by TrackingSystem
     std::unordered_map<entt::entity, std::vector<RadarTrack>> framePings;
+};
+
+struct MasterTrackTable {
+    uint32_t nextGlobalTrackId = 1000;
+
+    // Global master list of fused tracks available to the entire task force datalink
+    struct GlobalTrack {
+        RadarTrack track;
+        float confidence = 1.0f;
+    };
+
+    std::unordered_map<uint32_t, GlobalTrack> activeGlobalTracks;
+
+    uint32_t AllocateTrackId() {
+        return nextGlobalTrackId++;
+    }
+
+    void Clear() {
+        activeGlobalTracks.clear();
+    }
 };
 
 // =============================================
@@ -206,12 +202,12 @@ struct FlightData {
 
 struct SeekerHead {
     entt::entity shooter { entt::null };
-    SeekerType type;
+    uint32_t targetGlobalTrackId = 0;
+    SeekerType type = SeekerType::SEMI_ACTIVE;
     float rangeNM = 0.0f;
     GuidancePhase phase { GuidancePhase::MIDCOURSE_DATALINK };
-    uint32_t targetSystemTrackId = 0;
-    MathUtils::Vec2 targetPos = { 0.0f, 0.0f };
-    MathUtils::Vec2 targetVel = {0.0f, 0.0f};
+    MathUtils::Vec2 targetPos = { .x = 0.0f, .y = 0.0f };
+    MathUtils::Vec2 targetVel = {.x = 0.0f, .y = 0.0f};
     float targetAltitude = 0.0f;
     bool isInterceptor = false;
     float timeSinceLastCorrelation = 0.0f;

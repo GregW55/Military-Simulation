@@ -21,8 +21,6 @@ RadarTrack MakePing(MathUtils::Vec2 position,
     RadarTrack ping{};
     ping.pos = position;
     ping.altitude = altitude;
-    // Intentionally do not set ping.latestPing. A sensor ping is a measurement,
-    // not a persistent track with its own historical observation.
     return ping;
 }
 
@@ -356,10 +354,10 @@ TEST_F(RadarSystemsTest, RejectedImpossibleJumpMustNotBeReportedAsAValidUpdate)
     ASSERT_EQ(LocalTracks(observer).size(), 1u);
     ASSERT_TRUE(LocalTracks(observer).front().isMissing);
 
-    SubmitPings(observer, {MakePing({1.27f, 10.0f})});
+    SubmitPings(observer, {MakePing({1.5f, 10.0f})});
     Systems::TrackingSystem(registry, 1.0f);
 
-    ASSERT_EQ(LocalTracks(observer).size(), 1u);
+    ASSERT_EQ(LocalTracks(observer).size(), 2u);
     const RadarTrack& track = LocalTracks(observer).front();
     EXPECT_TRUE(track.isMissing)
         << "A measurement rejected by the speed limit must not clear missing status.";

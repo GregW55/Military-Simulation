@@ -51,6 +51,7 @@ bool AegisEngine::Initialize(const bool headless, int seed) {
     registry.ctx().emplace<MapProjection>();
     registry.ctx().emplace<RadarDetectionData>();
     registry.ctx().emplace<SharedThreatPicture>();
+    registry.ctx().emplace<MasterTrackTable>();
 
     // Same offsets and scale the renderer draws the heightmap with, so what you see and what the radar uses can't drift apart.
     std::vector<uint8_t> elevation;
@@ -174,6 +175,7 @@ void AegisEngine::SpawnScenarioUnits() {
 void AegisEngine::Update(float deltaTime) {
     Systems::SensorSystem(registry, deltaTime);
     Systems::TrackingSystem(registry, deltaTime);
+    Systems::SensorFusionSystem(registry, deltaTime);
     Systems::CombatSystem(registry);
     Systems::GuidanceSystem(registry, deltaTime);
     Systems::MovementSystem(registry, deltaTime);

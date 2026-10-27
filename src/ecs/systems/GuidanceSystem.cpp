@@ -30,7 +30,7 @@ namespace {
 
         for (auto& track : myTracks) {
             // Do not silently change the missile's assigned target.
-            if (seeker.targetSystemTrackId != 0 && track.systemTrackId != seeker.targetSystemTrackId) continue;
+            if (seeker.targetGlobalTrackId != 0 && track.globalTrackId != seeker.targetGlobalTrackId) continue;
 
             const float distToTrack = MathUtils::GetDistance(trans.pos, track.pos);
             if (distToTrack < 0.001f) continue;
@@ -98,7 +98,7 @@ namespace {
                 }
 
                 // Prefer the original system track when it is still available
-                if (seeker.targetSystemTrackId != 0 && track.systemTrackId != seeker.targetSystemTrackId) continue;
+                if (seeker.targetGlobalTrackId != 0 && track.globalTrackId != seeker.targetGlobalTrackId) continue;
 
                 closestDist = d;
                 best = &track;

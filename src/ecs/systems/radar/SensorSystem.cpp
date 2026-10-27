@@ -1,6 +1,6 @@
-#include "../components.h"
-#include "../Systems.h"
-#include "../../core/Physics.h"
+#include "../../components.h"
+#include "../../Systems.h"
+#include "../../../core/Physics.h"
 
 namespace
 {
@@ -8,12 +8,8 @@ namespace
     // === Radar scan timing ===
     // =========================
 
-    bool ShouldBeginRadarScan(RadarEmitter& radar, float deltaTime) {
-        radar.timeSinceLastScan += deltaTime;
-
+    bool ShouldBeginRadarScan(RadarEmitter& radar) {
         if (radar.timeSinceLastScan < radar.scanRateSec) return false;
-
-        radar.timeSinceLastScan = 0.0f;
 
         return true;
     }
@@ -70,7 +66,11 @@ void Systems::SensorSystem(entt::registry& registry, const float deltaTime) {
         RadarEmitter& obsRadar,
         const IFF& obsIFF)
     {
-        if (ShouldBeginRadarScan(obsRadar, deltaTime)) {
+        obsRadar.timeSinceLastScan += deltaTime;
+
+        if (ShouldBeginRadarScan(obsRadar)) {
+            obsRadar.timeSinceLastScan -= obsRadar.scanRateSec;
+
             std::vector<RadarTrack> pings;
             pings.reserve(10);
 
@@ -83,15 +83,17 @@ void Systems::SensorSystem(entt::registry& registry, const float deltaTime) {
                 const IFF& targetIFF)
             {
                 if (target != observer && obsIFF.isHostile != targetIFF.isHostile) {
-                    const auto ping = ScanForTargets(map, obsTransform, obsRadar,
-                                               targetTransform, targetRadarSignature);
+
+                    const auto ping =
+                        ScanForTargets(map, obsTransform, obsRadar, targetTransform, targetRadarSignature);
+
                     if (ping.has_value()) {
                         pings.push_back(*ping);
                     }
                 }
             });
 
-            // Store the generated pingsi n the global context for Tracking to pick up
+            // Store the generated pings in the global context for TrackingSystem to pick up
             detectionData.framePings[observer] = std::move(pings);
         }
     });

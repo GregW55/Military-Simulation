@@ -73,7 +73,7 @@ namespace MathUtils {
     // ===========================
     // === NAVIGATION & ANGLES ===
     // ===========================
-    float GetAngleDegrees(Vec2 start, Vec2 end) noexcept;
+    float GetVectorDirectionDegrees(Vec2 vector) noexcept;
     float WrapAngle(float angle) noexcept;
     float GetShortestAngleDiff(float current, float target) noexcept;
     float GetMaxTurnRateDegSec(float speedKnots, float maxLateralGs) noexcept;

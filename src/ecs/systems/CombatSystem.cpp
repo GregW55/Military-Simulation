@@ -100,10 +100,10 @@ namespace {
 
         registry.emplace<SeekerHead>(missile,
             shooter,
+            target.globalTrackId,
             mStats.seekerType,
             mStats.seekerRangeNM,
             GuidancePhase::MIDCOURSE_DATALINK,
-            target.systemTrackId,
             target.pos,
             target.vel,
             target.altitude,
@@ -113,6 +113,7 @@ namespace {
             mStats.maxLateralGs,
             true
             );
+
         registry.emplace<Transform2D>(missile,
             shooterTransform.pos, shooterTransform.altitude, shooterTransform.heading);
 
@@ -173,12 +174,12 @@ namespace {
 
             if (VERBOSE_COMBAT_LOG) {
                 std::cout << "[T=" << Systems::GetSimTime(registry) << "s] [FIRE] Entity " << (uint32_t)entity << " launched " << selectedWeapon
-                                  << " at threat (class=" << (int)threat.classification
+                                  << " at threat (class=" << (int)threat.classification << ", trackID=" << threat.globalTrackId
                                   << ", dist=" << distToTarget << "nm, TTI=" << threat.timeToImpactSec << "s)\n";
             }
 
             log.current.push_back({
-                threat.systemTrackId,
+                threat.globalTrackId,
                 missileEntity,
                 Systems::GetSimTime(registry),
                 true});
@@ -216,7 +217,7 @@ namespace {
         }
 
         // --- Shoot-Look-Shoot Logic ---
-        int activeShots = CountActiveShotsAgainst(log, threat.systemTrackId);
+        int activeShots = CountActiveShotsAgainst(log, threat.globalTrackId);
         if (activeShots >= MAX_SHOTS_PER_THREAT ||
            (activeShots == 1 && threat.timeToImpactSec > MAX_TTI_FOR_SECOND_SHOT_SEC)) {
             result.status = EngagementStatus::MaxShotsInFlight;
@@ -255,7 +256,7 @@ namespace {
         // --- Datalink check to see if we're already targeting this ---
         // Todo: Needs more nuance... a missile inbound in 20 minutes does not require multiple ships to fire at it
         auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
-        if (threat.classification != ThreatClass::MISSILE_INBOUND && sharedPicture.IsAssigned(threat.systemTrackId)) {
+        if (threat.classification != ThreatClass::MISSILE_INBOUND && sharedPicture.IsAssigned(threat.globalTrackId)) {
             result.status = EngagementStatus::TargetAlreadyAssigned;
             return result;
         }
@@ -278,7 +279,7 @@ namespace {
         if (eval.status != EngagementStatus::ReadyToEngage) return false;
 
         auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
-        sharedPicture.Assign(threat.systemTrackId, entity);
+        sharedPicture.Assign(threat.globalTrackId, entity);
 
         int salvoCount = DetermineSalvoSize(threat);
         FireSalvo(registry, entity, transform, registry.get<Kinematics>(entity),

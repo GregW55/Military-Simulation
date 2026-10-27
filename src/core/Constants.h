@@ -103,6 +103,7 @@ constexpr float WEAPON_COOLDOWN = 0.5f;
 // 8. THREAT CLASSIFICATION THRESHOLDS
 // ==========================================
 // Speed thresholds separating contact/threat types
+constexpr float MAX_SHIP_ALTITUDE_M = 40.0f;                            // Max altitude before reclassifying
 constexpr float MAX_SHIP_SPEED_KTS = 50.0f;                             // Max speed before reclassifying to UNKNOWN
 constexpr float MIN_AIRCRAFT_SPEED_KTS = 150.0f;                        // Threshold to reclassify as AIRCRAFT
 constexpr float MIN_MISSILE_SPEED_KTS = 250.0f;                         // Threshold to reclassify as MISSILE

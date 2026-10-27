@@ -24,6 +24,8 @@ public:
 
     static void TrackingSystem(entt::registry& registry, float deltaTime);
 
+    static void SensorFusionSystem(entt::registry& registry, float deltaTime);
+
     // --- COMBAT SYSTEM ---
     static void CombatSystem(entt::registry& registry);
 
