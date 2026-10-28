@@ -7,18 +7,15 @@ namespace {
         MasterTrackTable::GlobalTrack& globalTrack,
         const RadarTrack& localTrack)
     {
-        globalTrack.track.latestPing = localTrack.pos;
+        if (localTrack.ageSec > globalTrack.track.ageSec) return;
+
+        globalTrack.track.latestPing = localTrack.latestPing;
         globalTrack.track.pos = localTrack.pos;
         globalTrack.track.vel = localTrack.vel;
         globalTrack.track.altitude = localTrack.altitude;
-
-        if (localTrack.ageSec < globalTrack.track.ageSec) {
-            globalTrack.track.ageSec = localTrack.ageSec;
-        }
-
+        globalTrack.track.ageSec = localTrack.ageSec;
         globalTrack.track.hasVelocity = localTrack.hasVelocity;
-
-        globalTrack.track.isMissing = localTrack.isMissing;
+        globalTrack.track.isMissing = false;
         globalTrack.track.speedKnots = localTrack.speedKnots;
 
         if (localTrack.timeToImpactSec < globalTrack.track.timeToImpactSec) {
@@ -40,7 +37,7 @@ namespace {
         uint32_t newId)
     {
         MasterTrackTable::GlobalTrack globalTrack{};
-        localTrack.globalTrackId = newId,   // global track id
+        localTrack.globalTrackId = newId;   // global track id
         globalTrack.track = localTrack;     // Initialize globalTrack with localTrack's parameters
         globalTrack.confidence = 1.0f;      // Confidence
 
@@ -94,10 +91,12 @@ void Systems::SensorFusionSystem(
     // Age existing global tracks
     for (auto& [id, globalTrack] : masterTable.activeGlobalTracks) {
         globalTrack.track.ageSec += deltaTime;
+        globalTrack.track.isMissing = true;  // Cleared by UpdateMasterTrack if a live local track reports it
     }
 
     for (auto& [observer, tracks] : detectionData.activeTracks) {
         for (auto& localTrack : tracks) {
+            if (localTrack.isMissing) continue;
 
             // Preserve an existing local-to-global association
             if (localTrack.globalTrackId != 0) {
@@ -129,4 +128,9 @@ void Systems::SensorFusionSystem(
             }
         }
     }
+
+    // Drop global tracks that no observer has refreshed within the timeout limit
+    std::erase_if(masterTable.activeGlobalTracks, [] (const auto& entry) {
+        return entry.second.track.ageSec > TRACK_DELETION_TIMEOUT_SEC;
+    });
 }
