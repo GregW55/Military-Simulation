@@ -9,6 +9,9 @@ namespace {
     {
         if (localTrack.ageSec > globalTrack.track.ageSec) return;
 
+        // isMissing is set at the top of the frame, so true here = first report this frame
+        const bool firstReport = globalTrack.track.isMissing;
+
         globalTrack.track.latestPing = localTrack.latestPing;
         globalTrack.track.pos = localTrack.pos;
         globalTrack.track.vel = localTrack.vel;
@@ -18,14 +21,21 @@ namespace {
         globalTrack.track.isMissing = false;
         globalTrack.track.speedKnots = localTrack.speedKnots;
 
-        if (localTrack.timeToImpactSec < globalTrack.track.timeToImpactSec) {
+        if (firstReport) {
             globalTrack.track.timeToImpactSec = localTrack.timeToImpactSec;
+            globalTrack.track.threatScore = localTrack.threatScore;
+        }
+        else {
+            // Another observer already reported this frame: keep the lowest known TTI, highest threat
+            float &g = globalTrack.track.timeToImpactSec;
+            const float l = localTrack.timeToImpactSec;
+
+            if (l >= 0.0f && (g < 0.0f || l < g)) g = l;
+
+            globalTrack.track.threatScore = std::max(globalTrack.track.threatScore, localTrack.threatScore);
         }
 
         globalTrack.track.classification = localTrack.classification;
-        if (localTrack.threatScore > globalTrack.track.threatScore) {
-            globalTrack.track.threatScore = localTrack.threatScore;
-        }
 
         globalTrack.track.consistentObservationSec = localTrack.consistentObservationSec;
         globalTrack.confidence = 1.0f;
