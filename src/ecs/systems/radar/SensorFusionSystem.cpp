@@ -56,13 +56,15 @@ namespace {
 
     uint32_t CorrelateLocalToMaster(
         const MasterTrackTable& masterTable,
-        const RadarTrack& localTrack)
+        const RadarTrack& localTrack,
+        const std::unordered_set<uint32_t>& claimedByThisObserver)
     {
         // Build a list of pointers so the helper can work with the unordered_map without copying the global tracks
         std::vector<const MasterTrackTable::GlobalTrack*> globalTracks;
         globalTracks.reserve(masterTable.activeGlobalTracks.size());
 
         for (const auto& [id, globalTrack] : masterTable.activeGlobalTracks) {
+            if (claimedByThisObserver.contains(id)) continue;
             globalTracks.push_back(&globalTrack);
         }
 
@@ -109,6 +111,13 @@ void Systems::SensorFusionSystem(
     }
 
     for (auto& [observer, tracks] : detectionData.activeTracks) {
+
+        // Every global ID this observer's local tracks already hold
+        std::unordered_set<uint32_t> claimed;
+        for (const auto& t : tracks) {
+            if (t.globalTrackId != NO_GLOBAL_TRACK) claimed.insert(t.globalTrackId);
+        }
+
         for (auto& localTrack : tracks) {
             if (localTrack.isMissing) continue;
 
@@ -123,23 +132,22 @@ void Systems::SensorFusionSystem(
             }
             
             // No valid existing association: try correlating by position.
-            const uint32_t matchedGlobalTrackId = CorrelateLocalToMaster(masterTable, localTrack);
+            const uint32_t matchedGlobalTrackId = CorrelateLocalToMaster(masterTable, localTrack, claimed);
 
             auto it = masterTable.activeGlobalTracks.find(matchedGlobalTrackId);
 
             if (it != masterTable.activeGlobalTracks.end()) {
                 UpdateMasterTrack(it->second, localTrack);
-
                 localTrack.globalTrackId = matchedGlobalTrackId;
             }
             else {
                 // No match: create a new global track.
                 const uint32_t newId = masterTable.AllocateTrackId();
-
                 CreateNewMasterTrack(masterTable, localTrack, newId);
-
                 localTrack.globalTrackId = newId;
             }
+
+            claimed.insert(localTrack.globalTrackId); // This ID is now taken
         }
     }
 
