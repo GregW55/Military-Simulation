@@ -54,42 +54,39 @@ namespace {
         const RadarTrack& ping,
         const MathUtils::Vec2& observerPos)
     {
-        if (track.ageSec > 0.0001f)
-        {
-            const float timeElapsed = track.ageSec;
+        const float timeElapsed = track.ageSec;
 
-            // Calculate velocity using the anchor from the last actual ping
-            MathUtils::Vec2 calculatedVel = MathUtils::VelocityBetweenPositions(track.latestPing, ping.pos, timeElapsed);
-            float derivedSpeedNmPerSec = MathUtils::Length(calculatedVel);
-            float derivedSpeedKnots = MathUtils::NmPerSecToKnots(derivedSpeedNmPerSec);
+        // Calculate velocity using the anchor from the last actual ping
+        MathUtils::Vec2 calculatedVel = MathUtils::VelocityBetweenPositions(track.latestPing, ping.pos, timeElapsed);
+        float derivedSpeedNmPerSec = MathUtils::Length(calculatedVel);
+        float derivedSpeedKnots = MathUtils::NmPerSecToKnots(derivedSpeedNmPerSec);
 
-            track.vel = calculatedVel;
-            track.speedKnots = derivedSpeedKnots;
-            track.hasVelocity = true;
-            track.isMissing = false;
-            track.latestPing = ping.pos;
-            track.pos = ping.pos;
-            track.altitude = ping.altitude;
-            track.ageSec = 0.0f;
+        track.vel = calculatedVel;
+        track.speedKnots = derivedSpeedKnots;
+        track.hasVelocity = true;
+        track.isMissing = false;
+        track.latestPing = ping.pos;
+        track.pos = ping.pos;
+        track.altitude = ping.altitude;
+        track.ageSec = 0.0f;
 
-            float distance = MathUtils::GetDistance(observerPos, track.pos);
-            if (distance > 0.001f) {
-                float closingSpeedNmPerSec =
-                    MathUtils::GetClosingSpeedNmPerSec(track.pos, track.vel, observerPos);
+        float distance = MathUtils::GetDistance(observerPos, track.pos);
+        if (distance > 0.001f) {
+            float closingSpeedNmPerSec =
+                MathUtils::GetClosingSpeedNmPerSec(track.pos, track.vel, observerPos);
 
-                track.closingSpeedKnots = MathUtils::NmPerSecToKnots(closingSpeedNmPerSec);
-                track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(distance, closingSpeedNmPerSec);
-            }
-            else track.timeToImpactSec = 0.0f;
-
-            ThreatClass newClassification = ThreatAnalysis::Classify(track.speedKnots, track.altitude);
-
-            if (newClassification == track.classification) track.consistentObservationSec += timeElapsed;
-            else  track.consistentObservationSec = 0.0f;
-
-            track.classification = newClassification;
-            track.threatScore = ThreatAnalysis::ComputeThreatScore(track);
+            track.closingSpeedKnots = MathUtils::NmPerSecToKnots(closingSpeedNmPerSec);
+            track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(distance, closingSpeedNmPerSec);
         }
+        else track.timeToImpactSec = 0.0f;
+
+        ThreatClass newClassification = ThreatAnalysis::Classify(track.speedKnots, track.altitude);
+
+        if (newClassification == track.classification) track.consistentObservationSec += timeElapsed;
+        else  track.consistentObservationSec = 0.0f;
+
+        track.classification = newClassification;
+        track.threatScore = ThreatAnalysis::ComputeThreatScore(track);
     }
 
     // ==========================
@@ -99,6 +96,7 @@ namespace {
     {
         RadarTrack track;
 
+        track.globalTrackId = NO_GLOBAL_TRACK;
         track.pos = ping.pos;
         track.latestPing = ping.pos;
         track.vel = {0.0f, 0.0f};

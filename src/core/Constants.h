@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 // ==========================================
 // 1. FUNDAMENTAL MATH & PHYSICS
@@ -71,7 +72,7 @@ constexpr float TRACK_MIN_ACTIONABLE_AGE_SEC = 0.0001f;
 
 constexpr float MIN_OBSERVATION_TIME_SEC = 1.0f;
 constexpr float MAX_TTI_FOR_SECOND_SHOT_SEC = 30.0f;
-constexpr int   MAX_SHOTS_PER_THREAT = 2;
+constexpr int8_t MAX_SHOTS_PER_THREAT = 2;
 constexpr float MIN_AMMO_RESERVE_RATIO = 0.15f;                         // ~15% max ammo reserved for incoming missiles
 
 // ==========================================
@@ -79,6 +80,7 @@ constexpr float MIN_AMMO_RESERVE_RATIO = 0.15f;                         // ~15% 
 // ==========================================
 constexpr float DATALINK_TIMEOUT_SEC = 3.0f;
 constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.5f;
+constexpr int8_t NO_GLOBAL_TRACK = 0;
 
 
 // ==========================================

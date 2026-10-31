@@ -47,8 +47,8 @@ namespace {
         uint32_t newId)
     {
         MasterTrackTable::GlobalTrack globalTrack{};
-        localTrack.globalTrackId = newId;   // global track id
         globalTrack.track = localTrack;     // Initialize globalTrack with localTrack's parameters
+        globalTrack.track.globalTrackId = newId;
         globalTrack.confidence = 1.0f;      // Confidence
 
         masterTable.activeGlobalTracks.emplace(newId, globalTrack);
@@ -102,6 +102,10 @@ void Systems::SensorFusionSystem(
     for (auto& [id, globalTrack] : masterTable.activeGlobalTracks) {
         globalTrack.track.ageSec += deltaTime;
         globalTrack.track.isMissing = true;  // Cleared by UpdateMasterTrack if a live local track reports it
+        if (globalTrack.track.hasVelocity) {
+            globalTrack.track.pos = MathUtils::ExtrapolatePosition(
+                globalTrack.track.latestPing, globalTrack.track.vel, globalTrack.track.ageSec);
+        }
     }
 
     for (auto& [observer, tracks] : detectionData.activeTracks) {
@@ -109,7 +113,7 @@ void Systems::SensorFusionSystem(
             if (localTrack.isMissing) continue;
 
             // Preserve an existing local-to-global association
-            if (localTrack.globalTrackId != 0) {
+            if (localTrack.globalTrackId != NO_GLOBAL_TRACK) {
                 auto it = masterTable.activeGlobalTracks.find(localTrack.globalTrackId);
 
                 if (it != masterTable.activeGlobalTracks.end()) {

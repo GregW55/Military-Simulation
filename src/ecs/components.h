@@ -92,7 +92,7 @@ struct RadarSignature {
 };
 
 struct RadarTrack {
-    mutable uint32_t globalTrackId = 0;  // Linked to the MasterTrackTable ID
+    uint32_t globalTrackId = 0;  // Linked to the MasterTrackTable ID
     MathUtils::Vec2 latestPing;
     MathUtils::Vec2 pos;
     MathUtils::Vec2 vel;

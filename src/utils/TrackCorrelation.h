@@ -148,10 +148,7 @@ namespace TrackCorrelation {
         return false;
     }
 
-    template <
-        typename Sources,
-        typename Targets
-    >
+    template <typename Sources, typename Targets>
     std::vector<Candidate> GenerateCandidates(
         const Sources& sources,
         const Targets& targets,
