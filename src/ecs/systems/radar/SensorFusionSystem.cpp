@@ -3,6 +3,13 @@
 
 namespace {
 
+    bool IsStillSameObject(const RadarTrack& local, const RadarTrack& global)
+    {
+        return !(local.classification  != ThreatClass::UNKNOWN &&
+                 global.classification != ThreatClass::UNKNOWN &&
+                 local.classification  != global.classification);
+    }
+
     void UpdateMasterTrack(
         MasterTrackTable::GlobalTrack& globalTrack,
         const RadarTrack& localTrack)
@@ -35,8 +42,6 @@ namespace {
             globalTrack.track.threatScore = std::max(globalTrack.track.threatScore, localTrack.threatScore);
         }
 
-        globalTrack.track.classification = localTrack.classification;
-
         globalTrack.track.consistentObservationSec = localTrack.consistentObservationSec;
         globalTrack.confidence = 1.0f;
     }
@@ -48,7 +53,6 @@ namespace {
     {
         MasterTrackTable::GlobalTrack globalTrack{};
         globalTrack.track = localTrack;     // Initialize globalTrack with localTrack's parameters
-        globalTrack.track.globalTrackId = newId;
         globalTrack.confidence = 1.0f;      // Confidence
 
         masterTable.activeGlobalTracks.emplace(newId, globalTrack);
@@ -76,9 +80,7 @@ namespace {
             globalTracks, // Targets
             TrackCorrelation::SourceKind::TRACK);
 
-        if (candidates.empty()) {
-            return 0;
-        }
+        if (candidates.empty()) return 0;
 
         // Choose the nearest candidate, not the first unordered_map entry.
         const auto best = std::min_element(
@@ -120,14 +122,19 @@ void Systems::SensorFusionSystem(
 
         for (auto& localTrack : tracks) {
             if (localTrack.isMissing) continue;
+            if (localTrack.classification == ThreatClass::UNKNOWN) continue;
 
             // Preserve an existing local-to-global association
             if (localTrack.globalTrackId != NO_GLOBAL_TRACK) {
                 auto it = masterTable.activeGlobalTracks.find(localTrack.globalTrackId);
 
                 if (it != masterTable.activeGlobalTracks.end()) {
-                    UpdateMasterTrack(it->second, localTrack);
-                    continue;
+                    if (IsStillSameObject(localTrack, it->second.track)) {
+                        UpdateMasterTrack(it->second, localTrack);
+                        continue;
+                    }
+                    claimed.erase(localTrack.globalTrackId);
+                    localTrack.globalTrackId = NO_GLOBAL_TRACK;
                 }
             }
             
@@ -143,8 +150,8 @@ void Systems::SensorFusionSystem(
             else {
                 // No match: create a new global track.
                 const uint32_t newId = masterTable.AllocateTrackId();
-                CreateNewMasterTrack(masterTable, localTrack, newId);
                 localTrack.globalTrackId = newId;
+                CreateNewMasterTrack(masterTable, localTrack, newId);
             }
 
             claimed.insert(localTrack.globalTrackId); // This ID is now taken

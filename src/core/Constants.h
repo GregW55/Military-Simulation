@@ -67,26 +67,25 @@ constexpr float TRACK_MAX_SPEED_NM_S = MAX_PLAUSIBLE_SPEED_KNOTS * KNOTS_TO_NM_P
 constexpr float MAX_PLAUSIBLE_VEL_CHANGE_KNOTS = 800.0f;
 
 constexpr float TRACK_DELETION_TIMEOUT_SEC = 5.0f;                      // Removed entirely after unrefreshed
-constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 2.0f;                  // Must be fresher than this to engage/lock
+constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 3.0f;                  // Must be fresher than this to engage/lock
 constexpr float TRACK_MIN_ACTIONABLE_AGE_SEC = 0.0001f;
 
 constexpr float MIN_OBSERVATION_TIME_SEC = 1.0f;
 constexpr float MAX_TTI_FOR_SECOND_SHOT_SEC = 30.0f;
-constexpr int8_t MAX_SHOTS_PER_THREAT = 2;
+constexpr uint8_t MAX_SHOTS_PER_THREAT = 2;
 constexpr float MIN_AMMO_RESERVE_RATIO = 0.15f;                         // ~15% max ammo reserved for incoming missiles
 
 // ==========================================
 // 5. DATALINK & NETWORKING
 // ==========================================
 constexpr float DATALINK_TIMEOUT_SEC = 3.0f;
-constexpr float DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM = 0.5f;
-constexpr int8_t NO_GLOBAL_TRACK = 0;
-
+constexpr float DATALINK_BREAK_DIST_NM = 0.5f;
+constexpr uint32_t NO_GLOBAL_TRACK = 0;
 
 // ==========================================
 // 6. MISSILE GUIDANCE & DYNAMICS
 // ==========================================
-constexpr float LAUNCH_SPEED_FRACTION = 0.15f;                          // ~15% max speed off rail before thrust
+constexpr float LAUNCH_SPEED_FRACTION = 0.25f;                          // ~25% max speed during launch from ship cell
 constexpr float MIN_TIME_BEFORE_SEEKER_ACTIVATION_SEC = 0.75f;          // Brief separation/boost phase
 constexpr float DESCENT_SAFETY_MARGIN_SEC = 2.5f;                       // Small buffer to avoid cutting it razor-thin
 
@@ -108,16 +107,16 @@ constexpr float WEAPON_COOLDOWN = 0.5f;
 // Speed thresholds separating contact/threat types
 constexpr float MAX_SHIP_ALTITUDE_M = 40.0f;                            // Max altitude before reclassifying
 constexpr float MAX_SHIP_SPEED_KTS = 50.0f;                             // Max speed before reclassifying to UNKNOWN
-constexpr float MIN_AIRCRAFT_SPEED_KTS = 150.0f;                        // Threshold to reclassify as AIRCRAFT
-constexpr float MIN_MISSILE_SPEED_KTS = 250.0f;                         // Threshold to reclassify as MISSILE
+constexpr float CLASSIFICATION_CONFIRM_SEC = 2.0f;
 
 // =========================================================
 // === 9. KINEMATIC LIMITS BY CLASS (Correlation Gating) ===
 // =========================================================
 
-// Ships (speed/altitude limits are in section 8
+// Ships (speed/altitude limits are in section 8)
 constexpr float MAX_SHIP_TURN_RATE_DEG_PER_SEC = 10.0f;
 constexpr float MAX_SHIP_ACCEL_KNOTS_PER_SEC = 2.0f;
+constexpr float MIN_SPEED_FOR_HEADING_KNOTS = 5.0f;                 // Minimum speed required before doing heading comparisons
 
 // Missiles (speed limit is MAX_PLAUSIBLE_SPEED_KNOTS)
 constexpr float MAX_MISSILE_TURN_RATE_DEG_PER_SEC = 90.0f;

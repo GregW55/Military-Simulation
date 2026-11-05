@@ -101,12 +101,14 @@ struct RadarTrack {
     bool hasVelocity = false;
     bool isMissing = false;
 
-    float speedKnots = 0.0f;                                        // Derived from vel magnitude each update
-    float closingSpeedKnots = 0.0f;                                 // Positive = closing on observer, negative = opening
-    float timeToImpactSec = -1.0f;                                  // -1 means not on intercept course
+    float speedKnots = 0.0f;                                            // Derived from vel magnitude each update
+    float closingSpeedKnots = 0.0f;                                     // Positive = closing on observer, negative = opening
+    float timeToImpactSec = -1.0f;                                      // -1 means not on intercept course
+    float threatScore = 0.0f;                                           // Higher = more urgent
     ThreatClass classification = ThreatClass::UNKNOWN;
-    float threatScore = 0.0f;                                       // Higher = more urgent
     float consistentObservationSec = 0.0f;
+    ThreatClass pendingClass = ThreatClass::UNKNOWN;                    // ThreatClass we think it is, only after CLASSIFICATION_CONFIRM_SEC can we confirm
+    float pendingSec = 0.0f;                                            // How long the threat class has been pending
 };
 
 struct SharedThreatPicture {
