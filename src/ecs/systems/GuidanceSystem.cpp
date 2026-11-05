@@ -66,7 +66,7 @@ namespace {
 
         // Network-wide datalink: check EVERY friendly ship's radar picture
         RadarTrack* best = nullptr;
-        float closestDist = DATALINK_ENGAGEMENT_CORRELATION_RADIUS_NM;
+        float closestDist = DATALINK_BREAK_DIST_NM;
 
         auto& detectionData = registry.ctx().get<RadarDetectionData>();
         auto radarShips = registry.view<RadarEmitter, IFF>();

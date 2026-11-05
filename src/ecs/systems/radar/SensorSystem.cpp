@@ -8,10 +8,8 @@ namespace
     // === Radar scan timing ===
     // =========================
 
-    bool ShouldBeginRadarScan(RadarEmitter& radar) {
-        if (radar.timeSinceLastScan < radar.scanRateSec) return false;
-
-        return true;
+    bool ShouldBeginRadarScan(const RadarEmitter& radar) {
+        return radar.timeSinceLastScan >= radar.scanRateSec;
     }
 
     // ======================
