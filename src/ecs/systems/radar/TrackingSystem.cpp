@@ -5,10 +5,22 @@
 #include "../../../utils/ThreatAnalysis.h"
 
 #include <algorithm>
-#include <cmath>
 #include <vector>
 
 namespace {
+
+    struct MatchPair {
+        size_t ping;
+        size_t track;
+    };
+
+    struct AssignmentResult {
+        std::vector<MatchPair> matchedPairs;
+        std::vector<char> pingUsed;
+        std::vector<char> trackUsed;
+        size_t originalTrackCount;
+    };
+
     // =======================================
     // === Track aging and timeout removal ===
     // =======================================
@@ -57,36 +69,59 @@ namespace {
         const float timeElapsed = track.ageSec;
 
         // Calculate velocity using the anchor from the last actual ping
-        MathUtils::Vec2 calculatedVel = MathUtils::VelocityBetweenPositions(track.latestPing, ping.pos, timeElapsed);
-        float derivedSpeedNmPerSec = MathUtils::Length(calculatedVel);
-        float derivedSpeedKnots = MathUtils::NmPerSecToKnots(derivedSpeedNmPerSec);
+        const MathUtils::Vec2 calculatedVel = MathUtils::VelocityBetweenPositions(track.latestPing, ping.pos, timeElapsed);
+        const float derivedSpeedNmPerSec = MathUtils::Length(calculatedVel);
+        const float derivedSpeedKnots = MathUtils::NmPerSecToKnots(derivedSpeedNmPerSec);
 
-        track.vel = calculatedVel;
-        track.speedKnots = derivedSpeedKnots;
-        track.hasVelocity = true;
-        track.isMissing = false;
-        track.latestPing = ping.pos;
-        track.pos = ping.pos;
-        track.altitude = ping.altitude;
-        track.ageSec = 0.0f;
+        float closingSpeedKnots = 0.0f;
+        float timeToImpact = 0.0f;
 
-        float distance = MathUtils::GetDistance(observerPos, track.pos);
+        const float distance = MathUtils::GetDistance(observerPos, track.pos);
         if (distance > 0.001f) {
-            float closingSpeedNmPerSec =
+            const float closingSpeedNmPerSec =
                 MathUtils::GetClosingSpeedNmPerSec(track.pos, track.vel, observerPos);
 
-            track.closingSpeedKnots = MathUtils::NmPerSecToKnots(closingSpeedNmPerSec);
-            track.timeToImpactSec = ThreatAnalysis::EstimateTimeToImpact(distance, closingSpeedNmPerSec);
+            closingSpeedKnots = MathUtils::NmPerSecToKnots(closingSpeedNmPerSec);
+            timeToImpact = ThreatAnalysis::EstimateTimeToImpact(distance, closingSpeedNmPerSec);
         }
-        else track.timeToImpactSec = 0.0f;
+        else {
+            timeToImpact = 0.0f;
+            closingSpeedKnots = 0.0f;
+        }
 
-        ThreatClass newClassification = ThreatAnalysis::Classify(track.speedKnots, track.altitude);
-
-        if (newClassification == track.classification) track.consistentObservationSec += timeElapsed;
-        else  track.consistentObservationSec = 0.0f;
-
-        track.classification = newClassification;
+        track.latestPing = ping.pos;
+        track.pos = ping.pos;
+        track.vel = calculatedVel;
+        track.altitude = ping.altitude;
+        track.ageSec = 0.0f;
+        track.hasVelocity = true;
+        track.isMissing = false;
+        track.speedKnots = derivedSpeedKnots;
+        track.closingSpeedKnots = closingSpeedKnots;
+        track.timeToImpactSec = timeToImpact;
         track.threatScore = ThreatAnalysis::ComputeThreatScore(track);
+
+        if (track.classification == ThreatClass::UNKNOWN) {         // Only classify track once
+            const ThreatClass observed = ThreatAnalysis::Classify(track.speedKnots, track.altitude);
+
+            if (observed == track.classification) {
+                track.pendingSec = 0.0f;
+                track.consistentObservationSec += timeElapsed;
+            }
+            else if (observed == track.pendingClass) {
+                track.pendingSec += timeElapsed;
+                if (track.pendingSec >= CLASSIFICATION_CONFIRM_SEC) {
+                    track.classification = observed;
+                    track.consistentObservationSec = 0.0f;
+                    track.pendingSec = 0.0f;
+                }
+            }
+            else {
+                track.pendingClass = observed;
+                track.pendingSec = 0.0f;
+            }
+        }
+        else track.consistentObservationSec += timeElapsed;
     }
 
     // ==========================
@@ -115,20 +150,7 @@ namespace {
         return track;
     }
 
-    // ====================================
-    // === Correlation Pipeline Helpers ===
-    // ====================================
-    std::vector<TrackCorrelation::Candidate> GenerateCandidates(
-        const std::vector<RadarTrack>& observerTracks,
-        const std::vector<RadarTrack>& pings)
-    {
-        return TrackCorrelation::GenerateCandidates(
-            pings,
-            observerTracks,
-            TrackCorrelation::SourceKind::PING);
-    }
-
-    TrackCorrelation::AssignmentResult ResolveAssignments(
+    AssignmentResult ResolveAssignments(
         const std::vector<RadarTrack>& observerTracks,
         const std::vector<RadarTrack>& pings,
         std::vector <TrackCorrelation::Candidate>& candidates)
@@ -144,7 +166,7 @@ namespace {
 
         std::vector<char> pingUsed(pings.size(), 0);
         std::vector<char> trackUsed(observerTracks.size(), 0);
-        std::vector<TrackCorrelation::MatchPair> matchedPairs;
+        std::vector<MatchPair> matchedPairs;
 
         for (const TrackCorrelation::Candidate& c : candidates) {
             const size_t p = c.sourceIndex;
@@ -214,10 +236,10 @@ void Systems::TrackingSystem(entt::registry& registry, float deltaTime)
             const MathUtils::Vec2 observerPos = registry.get<Transform2D>(observer).pos;
 
             // Find potential matches using pre-calculated positions
-            auto candidates = GenerateCandidates(observerTracks, pings);
+            auto candidates = TrackCorrelation::GenerateCandidates(pings, observerTracks, TrackCorrelation::SourceKind::PING);
 
             // Resolve the assignment (closest pairs win)
-            TrackCorrelation::AssignmentResult assignment = ResolveAssignments(observerTracks, pings, candidates);
+            AssignmentResult assignment = ResolveAssignments(observerTracks, pings, candidates);
 
             // Update all confirmed matches
             for (const auto& match : assignment.matchedPairs) {

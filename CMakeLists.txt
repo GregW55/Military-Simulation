@@ -89,6 +89,11 @@ if(BUILD_TESTING)
 
         src/core/GeoEngine.cpp
         src/utils/MathUtils.cpp
+            tests/RadarTestHelpers.h
+            tests/TrackCorrelationTests.cpp
+            tests/TrackingSystemTests.cpp
+            tests/SensorFusionSystemTests.cpp
+            tests/SensorSystemTests.cpp
     )
 
     target_include_directories(RadarSystemTests PRIVATE
