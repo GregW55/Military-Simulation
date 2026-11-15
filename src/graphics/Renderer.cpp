@@ -18,6 +18,55 @@ namespace {
     constexpr float kVertExag    = 4.0f;     // display only: raises terrain AND entity altitudes together
     constexpr int   kChunks      = 16;       // must match make_terrain.py
     constexpr int   kChunkCells  = 128;
+    constexpr int   kLevels      = 5;
+    // Level loaded for EVERY chunk at startup and kept resident. Memory for all 256 chunks:
+    // 0 = 90 MB, 1 = 0.4 GB, 2 = 1.4 GB, 3 = 5.7 GB. Levels above it load on demand near the camera.
+    constexpr int   kBaseLevel   = 2;
+    static_assert(kBaseLevel >= 0 && kBaseLevel <= 3, "level 4 exists only over Taiwan");
+
+    // Level L is used when the camera is closer than kLevelDistNM[L] (NM to the chunk's bounding box).
+    constexpr float kLevelDistNM[kLevels] = { 1e9f, 140.0f, 70.0f, 35.0f, 18.0f };
+
+
+    int LevelForDistance(float d) {
+        int lvl = 0;                                        // 0 means "the resident base level"
+        for (int L = kBaseLevel + 1; L < kLevels; ++L)
+            if (d < kLevelDistNM[L]) lvl = L;
+        return lvl;
+    }
+
+    float DistToBox(Vector3 p, Vector3 lo, Vector3 hi) {
+        const float dx = std::max({lo.x - p.x, 0.0f, p.x - hi.x});
+        const float dy = std::max({lo.y - p.y, 0.0f, p.y - hi.y});
+        const float dz = std::max({lo.z - p.z, 0.0f, p.z - hi.z});
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    Texture2D LoadChunkTexture(const char* path) {
+        Texture2D texture = LoadTexture(path);
+        if (texture.id == 0) return texture;
+        GenTextureMipmaps(&texture);
+        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+        SetTextureFilter(texture, TEXTURE_FILTER_ANISOTROPIC_8X);
+        SetTextureWrap(texture, TEXTURE_WRAP_CLAMP);
+        return texture;
+    }
+
+    Image DecodeTile(std::string path) {
+        return LoadImage(path.c_str());
+    }
+
+    // Main thread only(OpenGL): Turns a decoded image into a texture then frees the image
+    Texture2D UploadTile(Image& img) {
+        Texture2D t = LoadTextureFromImage(img);
+        UnloadImage(img);
+        if (t.id == 0) return t;
+        GenTextureMipmaps(&t);
+        SetTextureFilter(t, TEXTURE_FILTER_TRILINEAR);
+        SetTextureFilter(t, TEXTURE_FILTER_ANISOTROPIC_8X);
+        SetTextureWrap(t, TEXTURE_WRAP_CLAMP);
+        return t;
+    }
 
     // Render space: x = east, y = up, z = -north, unit = NM. +y is north in the sim (GeoToNM: y = dLat * 60).
     Vector3 ToRender(MathUtils::Vec2 nm, float altMeters) {
@@ -46,6 +95,7 @@ void Renderer::Shutdown() {
 bool Renderer::ShouldClose() { return WindowShouldClose(); }
 
 void Renderer::BuildTerrain(const MapProjection& map, const std::string& dir) {
+    terrainDir = dir;
     const int W = map.GridW(), H = map.GridH();
     if (W != kChunks * kChunkCells + 1 || H != W) {
         TraceLog(LOG_ERROR, "terrain grid is %dx%d but the renderer expects %d (rerun make_terrain.py?)",
@@ -66,7 +116,9 @@ void Renderer::BuildTerrain(const MapProjection& map, const std::string& dir) {
         m.vertices  = static_cast<float*>(MemAlloc(m.vertexCount * 3 * sizeof(float)));
         m.texcoords = static_cast<float*>(MemAlloc(m.vertexCount * 2 * sizeof(float)));
         m.indices   = static_cast<unsigned short*>(MemAlloc(m.triangleCount * 3 * sizeof(unsigned short)));
-        // No normals: lighting is baked into the pictures.
+
+        Vector3 lo = { FLT_MAX,  FLT_MAX,  FLT_MAX};
+        Vector3 hi = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
 
         for (int j = 0; j < vn; ++j)
         for (int i = 0; i < vn; ++i) {
@@ -76,9 +128,10 @@ void Renderer::BuildTerrain(const MapProjection& map, const std::string& dir) {
             m.vertices[v * 3 + 0] = p.x;
             m.vertices[v * 3 + 1] = p.y;
             m.vertices[v * 3 + 2] = p.z;
-            // 0..1 across THIS chunk, because each picture covers exactly one chunk
             m.texcoords[v * 2 + 0] = static_cast<float>(i) / kChunkCells;
             m.texcoords[v * 2 + 1] = static_cast<float>(j) / kChunkCells;
+            lo = Vector3Min(lo, p);
+            hi = Vector3Max(hi, p);
         }
 
         int t = 0;
@@ -86,40 +139,101 @@ void Renderer::BuildTerrain(const MapProjection& map, const std::string& dir) {
         for (int i = 0; i < kChunkCells; ++i) {
             const unsigned short tl = static_cast<unsigned short>(j * vn + i);
             const unsigned short tr = tl + 1, bl = tl + vn, br = bl + 1;
-            m.indices[t++] = tl; m.indices[t++] = bl; m.indices[t++] = tr;   // counter-clockwise seen from above
+            m.indices[t++] = tl; m.indices[t++] = bl; m.indices[t++] = tr;
             m.indices[t++] = tr; m.indices[t++] = bl; m.indices[t++] = br;
         }
 
         UploadMesh(&m, false);
         TerrainChunk& c = chunks[k];
         c.model = LoadModelFromMesh(m);
+        c.lo = lo;
+        c.hi = hi;
 
-        const char* path = TextFormat("%s/tiles/L0_%03d.jpg", dir.c_str(), k);
+        for (int L = 0; L < kLevels; ++L)
+            c.avail[L] = FileExists(TextFormat("%s/tiles/L%d_%03d.jpg", dir.c_str(), L, k));
 
-        c.tex = LoadTexture(path);
-
-        if (!IsTextureValid(c.tex))
-        {
-            TraceLog(LOG_ERROR, "Failed to load terrain texture: %s", path);
-            continue;
-        }
-
-        GenTextureMipmaps(&c.tex);
-        SetTextureFilter(c.tex, TEXTURE_FILTER_TRILINEAR);
-        SetTextureWrap(c.tex, TEXTURE_WRAP_CLAMP);
-
-        c.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = c.tex;
+        c.base = LoadChunkTexture(TextFormat("%s/tiles/L%d_%03d.jpg", dir.c_str(), kBaseLevel, k));
+        if (c.base.id == 0) TraceLog(LOG_ERROR, "missing terrain texture for chunk %d", k);
+        c.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = c.base;
     }
 
-    // Start the camera over the middle of the grid, looking at sea level
     camTarget = ToRender(map.GridToNM(W / 2, H / 2), 0.0f);
 }
 
+void Renderer::UpdateChunkLods() {
+    if (chunks.empty()) return;
+
+    // 1) Finish at most ONE decoded image per frame. This upload is the only GPU work on the main thread.
+    for (size_t i = 0; i < inFlight.size(); ++i) {
+        if (inFlight[i].image.wait_for(std::chrono::seconds(0)) != std::future_status::ready) continue;
+
+        PendingLoad p = std::move(inFlight[i]);
+        inFlight.erase(inFlight.begin() + static_cast<std::ptrdiff_t>(i));
+
+        TerrainChunk& c = chunks[p.chunk];
+        c.pending = -1;
+        Image img = p.image.get();
+        if (img.data == nullptr) { c.avail[p.level] = false; break; }        // file failed to decode: stop asking for it
+
+        const float d = DistToBox(camera.position, c.lo, c.hi);
+        if (LevelForDistance(d) < p.level) { UnloadImage(img); break; }      // camera moved away meanwhile: drop it
+
+        const Texture2D old = c.extra;
+        c.extra = UploadTile(img);
+        c.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = c.extra;   // point the model at the new one first
+        c.level = p.level;
+        if (old.id) UnloadTexture(old);                                      // then free the old one
+        break;
+    }
+
+    // 2) Decide levels. Downgrades to the base are free. Upgrades are requested from a worker thread.
+    constexpr size_t kMaxInFlight = 3;
+    int reqChunk = -1, reqLevel = 0;
+    float reqDist = FLT_MAX;
+
+    for (int k = 0; k < static_cast<int>(chunks.size()); ++k) {
+        TerrainChunk& c = chunks[k];
+        const float d = DistToBox(camera.position, c.lo, c.hi);
+
+        int want = LevelForDistance(d);
+        // Hysteresis: keep the higher level until the camera is ~15% past its boundary
+        if (want < c.level) want = std::min(c.level, std::max(want, LevelForDistance(d / 1.15f)));
+        while (want > 0 && !c.avail[want]) --want;
+        if (want == c.level) continue;
+
+        if (want == 0) {                                  // back to the always-loaded base: no decoding needed
+            c.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = c.base;
+            c.level = 0;
+            if (c.extra.id) { UnloadTexture(c.extra); c.extra = Texture2D{}; }
+            continue;
+        }
+        if (c.pending != -1) continue;                    // one outstanding request per chunk
+        if (d < reqDist) { reqChunk = k; reqLevel = want; reqDist = d; }   // nearest chunk first
+    }
+
+    if (reqChunk >= 0 && inFlight.size() < kMaxInFlight) {
+        chunks[reqChunk].pending = reqLevel;
+        const std::string path = TextFormat("%s/tiles/L%d_%03d.jpg", terrainDir.c_str(), reqLevel, reqChunk);
+        PendingLoad p;
+        p.chunk = reqChunk;
+        p.level = reqLevel;
+        p.image = std::async(std::launch::async, DecodeTile, path);
+        inFlight.push_back(std::move(p));
+    }
+}
+
 void Renderer::UnloadTerrain() {
+    for (auto& p : inFlight) {                       // let running decodes finish, then free their pixels
+        Image img = p.image.get();
+        if (img.data) UnloadImage(img);
+    }
+    inFlight.clear();
+
     for (auto& c : chunks) {
         c.model.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = Texture2D{};   // the model must not own the texture
         UnloadModel(c.model);
-        if (c.tex.id != 0) UnloadTexture(c.tex);
+        if (c.extra.id) UnloadTexture(c.extra);
+        if (c.base.id)  UnloadTexture(c.base);
     }
     chunks.clear();
 }
@@ -157,6 +271,7 @@ void Renderer::ProcessInput() {
 }
 
 void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario) {
+    UpdateChunkLods();
     BeginDrawing();
     ClearBackground({ 10, 20, 30, 255 });
 

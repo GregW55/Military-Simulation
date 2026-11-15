@@ -1,4 +1,5 @@
 #pragma once
+#include <future>
 #include <string>
 #include <vector>
 #include "raylib.h"
@@ -6,8 +7,19 @@
 #include "../core/MapProjection.h"
 
 struct TerrainChunk {
-    Model model{};
-    Texture2D tex{};
+    Model     model{};
+    Texture2D base{};          // level 0, always loaded
+    Texture2D extra{};         // the current higher-detail texture (id 0 if none)
+    int       level = 0;       // which level the model is showing now
+    bool      avail[5] = {};   // which level files exist on disk (level 4 exists only over Taiwan)
+    Vector3   lo{}, hi{};      // bounding box in render space, used for camera distance
+    int pending = -1;          // Level being decoded on a worker thread right now, -1 is none
+};
+
+struct PendingLoad {
+    int chunk = 0;
+    int level = 0;
+    std::future<Image> image;
 };
 
 class Renderer {
@@ -23,6 +35,7 @@ public:
     void Draw(const entt::registry& registry, const ScenarioData& scenario);
     void BuildTerrain(const MapProjection& map, const std::string& dir);
     void UnloadTerrain();
+    void UpdateChunkLods();
 
     float TimeScale() const {return timeScale; }
 
@@ -32,6 +45,8 @@ private:
     Vector3 camTarget{0.0f, 0.0f, 0.0f};
     float camYaw = 0.0f, camPitch = 0.0f, camDist = 400.0f;
     std::vector<TerrainChunk> chunks;
+    std::string terrainDir;
+    std::vector<PendingLoad> inFlight;
 
 
     float timeScale = 1.0f;
