@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "RadarTestHelpers.h"
+#include "ecs/Systems.h"
 
 class SensorFusionSystemTests : public ::testing::Test
 {
@@ -9,13 +10,17 @@ protected:
     entt::registry registry;
     entt::entity observer1 = entt::null;
     entt::entity observer2 = entt::null;
+    static constexpr MathUtils::Vec2 DefaultPos = {10.0f, 10.0f};
+
 
     void SetUp() override
     {
-        InitializeRadarContexts(registry);
+        registry.ctx().emplace<RadarDetectionData>();
+        registry.ctx().emplace<MasterTrackTable>();
 
         observer1 = registry.create();
         observer2 = registry.create();
+
     }
 
     RadarDetectionData& Data()
@@ -28,30 +33,15 @@ protected:
         return registry.ctx().get<MasterTrackTable>();
     }
 
-    RadarTrack MakeKnownLocalTrack(
-        MathUtils::Vec2 position = {10.0f, 10.0f},
-        MathUtils::Vec2 velocity = {0.2f, 0.0f})
-    {
-        RadarTrack track = MakeRadarTrack(
-            position,
-            ThreatClass::MISSILE_INBOUND,
-            true,
-            velocity);
-
-        track.latestPing = position;
-        track.globalTrackId = NO_GLOBAL_TRACK;
-
-        return track;
-    }
-
     MasterTrackTable::GlobalTrack MakeGlobalTrack(
         uint32_t id,
-        MathUtils::Vec2 position = {10.0f, 10.0f},
+        ThreatClass classification = ThreatClass::UNKNOWN,
+        MathUtils::Vec2 position = DefaultPos,
         MathUtils::Vec2 velocity = {0.2f, 0.0f})
     {
         MasterTrackTable::GlobalTrack global{};
 
-        global.track = MakeKnownLocalTrack(position, velocity);
+        global.track = radar_test::MakeLocalTrack(position, classification, velocity);
         global.track.globalTrackId = id;
         global.confidence = 1.0f;
 
@@ -66,7 +56,8 @@ protected:
 TEST_F(SensorFusionSystemTests, CreatesGlobalTrackForKnownLocalTrack)
 {
     Data().activeTracks[observer1].push_back(
-        MakeKnownLocalTrack());
+        radar_test::MakeLocalTrack(DefaultPos,
+            ThreatClass::MISSILE_INBOUND, {0.2f, 0.0f}));
 
     Systems::SensorFusionSystem(registry, 0.0f);
 
@@ -83,11 +74,11 @@ TEST_F(SensorFusionSystemTests, CreatesGlobalTrackForKnownLocalTrack)
 
 TEST_F(SensorFusionSystemTests, DoesNotFuseUnknownLocalTrack)
 {
-    RadarTrack track = MakeRadarTrack(
-        {10.0f, 10.0f},
+    RadarTrack track = radar_test::MakeLocalTrack(
+        DefaultPos,
         ThreatClass::UNKNOWN,
-        true,
-        VelocityFromKnots(1000.0f));
+        radar_test::VelocityFromKnots(1000.0f),
+        true);
 
     Data().activeTracks[observer1].push_back(track);
 
@@ -101,7 +92,8 @@ TEST_F(SensorFusionSystemTests, DoesNotFuseUnknownLocalTrack)
 
 TEST_F(SensorFusionSystemTests, DoesNotFuseMissingLocalTrack)
 {
-    RadarTrack track = MakeKnownLocalTrack();
+    RadarTrack track = radar_test::MakeLocalTrack(DefaultPos,
+        ThreatClass::UNKNOWN, {0.2f, 0.0f});
     track.isMissing = true;
 
     Data().activeTracks[observer1].push_back(track);
@@ -118,6 +110,7 @@ TEST_F(SensorFusionSystemTests, DoesNotFuseMissingLocalTrack)
 TEST_F(SensorFusionSystemTests, LocalTrackCorrelatesToExistingGlobalTrack)
 {
     constexpr uint32_t existingId = 1000;
+    const ThreatClass classification = ThreatClass::MISSILE_INBOUND;
 
     Master().activeGlobalTracks.emplace(
         existingId,
@@ -126,7 +119,7 @@ TEST_F(SensorFusionSystemTests, LocalTrackCorrelatesToExistingGlobalTrack)
     Master().nextGlobalTrackId = existingId + 1;
 
     Data().activeTracks[observer1].push_back(
-        MakeKnownLocalTrack());
+        radar_test::MakeLocalTrack(DefaultPos, classification, {0.2f, 0.0f}));
 
     Systems::SensorFusionSystem(registry, 0.0f);
 
@@ -146,15 +139,15 @@ TEST_F(SensorFusionSystemTests, LocalTrackCorrelatesToExistingGlobalTrack)
 
 TEST_F(SensorFusionSystemTests, TwoObserversReportingSameTargetShareOneGlobalID)
 {
-    const MathUtils::Vec2 position{10.0f, 10.0f};
     const MathUtils::Vec2 velocity =
-        VelocityFromKnots(1000.0f);
+            radar_test::VelocityFromKnots(1000.0f);
+    const ThreatClass classification = ThreatClass::MISSILE_INBOUND;
 
     Data().activeTracks[observer1].push_back(
-        MakeKnownLocalTrack(position, velocity));
+        radar_test::MakeLocalTrack(DefaultPos, classification, velocity));
 
     Data().activeTracks[observer2].push_back(
-        MakeKnownLocalTrack(position, velocity));
+        radar_test::MakeLocalTrack(DefaultPos, classification, velocity));
 
     Systems::SensorFusionSystem(registry, 0.0f);
 
@@ -173,16 +166,19 @@ TEST_F(SensorFusionSystemTests, TwoObserversReportingSameTargetShareOneGlobalID)
 TEST_F(SensorFusionSystemTests, TwoDifferentTargetsDoNotShareGlobalID)
 {
     auto& tracks = Data().activeTracks[observer1];
+    const ThreatClass classification = ThreatClass::MISSILE_INBOUND;
 
     tracks.push_back(
-        MakeKnownLocalTrack(
-            {10.0f, 10.0f},
-            VelocityFromKnots(1000.0f)));
+        radar_test::MakeLocalTrack(
+            DefaultPos,
+            classification,
+            radar_test::VelocityFromKnots(1000.0f)));
 
     tracks.push_back(
-        MakeKnownLocalTrack(
+        radar_test::MakeLocalTrack(
             {100.0f, 100.0f},
-            VelocityFromKnots(1000.0f)));
+            classification,
+            radar_test::VelocityFromKnots(1000.0f)));
 
     Systems::SensorFusionSystem(registry, 0.0f);
 
@@ -200,17 +196,17 @@ TEST_F(SensorFusionSystemTests, TwoDifferentTargetsDoNotShareGlobalID)
 // ID PERSISTENCE / CLASSIFICATION CONFLICT
 // ============================================================
 
-TEST_F(SensorFusionSystemTests, ClassificationConflictCreatesNewGlobalTrack)
-{
+TEST_F(SensorFusionSystemTests, ClassificationConflictCreatesNewGlobalTrack) {
     constexpr uint32_t oldId = 1000;
+    const ThreatClass classification = ThreatClass::MISSILE_INBOUND;
 
     Master().activeGlobalTracks.emplace(
         oldId,
-        MakeGlobalTrack(oldId));
+        MakeGlobalTrack(oldId, classification));
 
     Master().nextGlobalTrackId = oldId + 1;
 
-    RadarTrack local = MakeKnownLocalTrack();
+    RadarTrack local = radar_test::MakeLocalTrack(DefaultPos, classification,{0.2f, 0.0f});
 
     // The local track already points to the old global ID,
     // but now its confirmed class conflicts with the global class.
@@ -239,13 +235,12 @@ TEST_F(SensorFusionSystemTests, GlobalTrackPositionIsPredicted)
 {
     constexpr uint32_t id = 1000;
 
-    const MathUtils::Vec2 latestPing{10.0f, 10.0f};
     const MathUtils::Vec2 velocity =
-        VelocityFromKnots(1000.0f);
+            radar_test::VelocityFromKnots(1000.0f);
 
     Master().activeGlobalTracks.emplace(
         id,
-        MakeGlobalTrack(id, latestPing, velocity));
+        MakeGlobalTrack(id, ThreatClass::UNKNOWN, DefaultPos, velocity));
 
     Systems::SensorFusionSystem(registry, 0.5f);
 
@@ -253,7 +248,7 @@ TEST_F(SensorFusionSystemTests, GlobalTrackPositionIsPredicted)
 
     const MathUtils::Vec2 expected =
         MathUtils::ExtrapolatePosition(
-            latestPing,
+            DefaultPos,
             velocity,
             0.5f);
 

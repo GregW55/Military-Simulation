@@ -1,9 +1,14 @@
 #pragma once
 #include <string>
-#include <unordered_map>
+#include <vector>
 #include "raylib.h"
-#include "../../external/entt.hpp"
 #include "../models/ScenarioData.h"
+#include "../core/MapProjection.h"
+
+struct TerrainChunk {
+    Model model{};
+    Texture2D tex{};
+};
 
 class Renderer {
 public:
@@ -16,21 +21,25 @@ public:
     static bool ShouldClose() ;
     void ProcessInput();                                // zoom, pan, time compression, toggles
     void Draw(const entt::registry& registry, const ScenarioData& scenario);
+    void BuildTerrain(const MapProjection& map, const std::string& dir);
+    void UnloadTerrain();
 
     float TimeScale() const {return timeScale; }
 
 private:
    // Pass the ScenarioData into the load and draw functions
-    void LoadAssets(const ScenarioData& scenario);
-    void UnloadAssets();
-    void DrawLayer(const ScenarioData& scenario);
-    void DrawCropped(const Texture2D &tex, float x, float y, float cropL, float cropR, float cropT, float cropB);
+    Camera3D camera{};
+    Vector3 camTarget{0.0f, 0.0f, 0.0f};
+    float camYaw = 0.0f, camPitch = 0.0f, camDist = 400.0f;
+    std::vector<TerrainChunk> chunks;
 
-    std::unordered_map<std::string, Texture> tileTextures;
-    Texture2D heightMapTexture = {};
-    bool showElevation = false;
 
-    Camera2D camera = { 0 };
     float timeScale = 1.0f;
     bool showRadarRings = false;
+    // === 2D ===
+    /* Camera2D camera = {};
+     * std::unordered_map<std::string, Texture> tileTextures;
+     * Texture2D heightMapTexture = {};
+     * bool showElevation = false;
+    */
 };

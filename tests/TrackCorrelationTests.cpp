@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "RadarTestHelpers.h"
+#include "utils/TrackCorrelation.h"
 
 using namespace TrackCorrelation;
 
@@ -12,7 +13,7 @@ using namespace TrackCorrelation;
 TEST(TrackGateTests, NoVelocityGateUsesMaximumSpeedAndAge)
 {
     RadarTrack track =
-        MakeRadarTrack({}, ThreatClass::UNKNOWN, false);
+            radar_test::MakeLocalTrack({}, ThreatClass::UNKNOWN, {}, false);
 
     track.ageSec = 0.5f;
 
@@ -26,7 +27,8 @@ TEST(TrackGateTests, NoVelocityGateUsesMaximumSpeedAndAge)
 TEST(TrackGateTests, VelocityGateUsesVelocityErrorAndAcceleration)
 {
     RadarTrack track =
-        MakeRadarTrack({}, ThreatClass::MISSILE_INBOUND, true);
+        radar_test::MakeLocalTrack({}, ThreatClass::MISSILE_INBOUND,
+{0.2f, 0.0f}, true);
 
     track.ageSec = 0.5f;
 
@@ -46,7 +48,8 @@ TEST(TrackGateTests, VelocityGateUsesVelocityErrorAndAcceleration)
 TEST(TrackGateTests, GateGrowsAsTrackGetsOlder)
 {
     RadarTrack track =
-        MakeRadarTrack({}, ThreatClass::MISSILE_INBOUND, true);
+        radar_test::MakeLocalTrack({}, ThreatClass::MISSILE_INBOUND,
+            {0.2f, 0.0f}, true);
 
     track.ageSec = 0.25f;
     const float gate1 = GetTrackGateNM(track);
@@ -84,11 +87,12 @@ TEST(TrackGateTests, PositionOutsideGateIsRejected)
 TEST(PingCompatibilityTests, RejectsTrackWithZeroAge)
 {
     RadarTrack track =
-        MakeRadarTrack({}, ThreatClass::MISSILE_INBOUND, false);
+        radar_test::MakeLocalTrack({}, ThreatClass::MISSILE_INBOUND,
+            {0.0f, 0.0f}, false);
 
     track.ageSec = 0.0f;
 
-    RadarTrack ping = MakePing({0.0f, 0.0f});
+    RadarTrack ping = radar_test::MakePing({0.0f, 0.0f});
 
     EXPECT_FALSE(IsCompatible(
         ping, track, SourceKind::PING));
@@ -100,13 +104,14 @@ TEST(PingCompatibilityTests, AcceptsConstantVelocityMissile)
     constexpr float speedKnots = 1500.0f;
 
     const MathUtils::Vec2 velocity =
-        VelocityFromKnots(speedKnots);
+            radar_test::VelocityFromKnots(speedKnots);
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {0.0f, 0.0f},
         ThreatClass::MISSILE_INBOUND,
-        true,
         velocity,
+        true,
+        NO_GLOBAL_TRACK,
         age);
 
     track.latestPing = {0.0f, 0.0f};
@@ -115,7 +120,7 @@ TEST(PingCompatibilityTests, AcceptsConstantVelocityMissile)
     const MathUtils::Vec2 newPosition =
         MathUtils::Scale(velocity, age);
 
-    RadarTrack ping = MakePing(newPosition);
+    RadarTrack ping = radar_test::MakePing(newPosition);
 
     EXPECT_TRUE(IsCompatible(
         ping, track, SourceKind::PING));
@@ -125,9 +130,10 @@ TEST(PingCompatibilityTests, RejectsSpeedAboveShipLimit)
 {
     constexpr float age = 1.0f;
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {0.0f, 0.0f},
         ThreatClass::SURFACE_SHIP,
+        {0.0f, 0.0f},
         false);
 
     track.ageSec = age;
@@ -137,9 +143,9 @@ TEST(PingCompatibilityTests, RejectsSpeedAboveShipLimit)
         MAX_SHIP_SPEED_KTS + 100.0f;
 
     const MathUtils::Vec2 velocity =
-        VelocityFromKnots(impossibleSpeed);
+            radar_test::VelocityFromKnots(impossibleSpeed);
 
-    RadarTrack ping = MakePing(
+    RadarTrack ping = radar_test::MakePing(
         MathUtils::Scale(velocity, age));
 
     EXPECT_FALSE(IsCompatible(
@@ -148,14 +154,15 @@ TEST(PingCompatibilityTests, RejectsSpeedAboveShipLimit)
 
 TEST(PingCompatibilityTests, RejectsAltitudeAboveClassLimit)
 {
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {},
         ThreatClass::SURFACE_SHIP,
+        {0.0f, 0.0f},
         false);
 
     track.ageSec = 1.0f;
 
-    RadarTrack ping = MakePing(
+    RadarTrack ping = radar_test::MakePing(
         {0.0f, 0.0f},
         MAX_SHIP_ALTITUDE_M + 100.0f);
 
@@ -169,11 +176,12 @@ TEST(PingCompatibilityTests, RejectsShipAccelerationAboveLimit)
 
     const float startingSpeed = MAX_SHIP_SPEED_KTS * 0.5f;
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {},
         ThreatClass::SURFACE_SHIP,
+        radar_test::VelocityFromKnots(startingSpeed),
         true,
-        VelocityFromKnots(startingSpeed),
+        NO_GLOBAL_TRACK,
         age);
 
     track.latestPing = {0.0f, 0.0f};
@@ -186,9 +194,9 @@ TEST(PingCompatibilityTests, RejectsShipAccelerationAboveLimit)
 
     ASSERT_LT(impossibleSpeed, MAX_SHIP_SPEED_KTS);
 
-    RadarTrack ping = MakePing(
+    RadarTrack ping = radar_test::MakePing(
         MathUtils::Scale(
-            VelocityFromKnots(impossibleSpeed), age));
+            radar_test::VelocityFromKnots(impossibleSpeed), age));
 
     EXPECT_FALSE(IsCompatible(
         ping, track, SourceKind::PING));
@@ -201,19 +209,20 @@ TEST(PingCompatibilityTests, RejectsShipHeadingChangeAboveLimit)
 
     ASSERT_GT(speed, MIN_SPEED_FOR_HEADING_KNOTS);
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {},
         ThreatClass::SURFACE_SHIP,
+        radar_test::VelocityFromKnots(speed, 0.0f),
         true,
-        VelocityFromKnots(speed, 0.0f),
+        NO_GLOBAL_TRACK,
         age);
 
     track.latestPing = {0.0f, 0.0f};
     track.speedKnots = speed;
 
-    RadarTrack ping = MakePing(
+    RadarTrack ping = radar_test::MakePing(
         MathUtils::Scale(
-            VelocityFromKnots(speed, 90.0f), age));
+            radar_test::VelocityFromKnots(speed, 90.0f), age));
 
     EXPECT_FALSE(IsCompatible(
         ping, track, SourceKind::PING));
@@ -225,16 +234,17 @@ TEST(PingCompatibilityTests, RejectsShipHeadingChangeAboveLimit)
 
 TEST(TrackCompatibilityTests, RejectsCandidateWithoutVelocity)
 {
-    RadarTrack candidate = MakeRadarTrack(
+    RadarTrack candidate = radar_test::MakeLocalTrack(
         {},
         ThreatClass::MISSILE_INBOUND,
+        {0.0f, 0.0f},
         false);
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(1000.0f));
+        radar_test::VelocityFromKnots(1000.0f),
+        true);
 
     EXPECT_FALSE(IsCompatible(
         candidate, track, SourceKind::TRACK));
@@ -243,19 +253,19 @@ TEST(TrackCompatibilityTests, RejectsCandidateWithoutVelocity)
 TEST(TrackCompatibilityTests, AcceptsMatchingVelocityAndClassification)
 {
     const MathUtils::Vec2 velocity =
-        VelocityFromKnots(1000.0f);
+        radar_test::VelocityFromKnots(1000.0f);
 
-    RadarTrack candidate = MakeRadarTrack(
+    RadarTrack candidate = radar_test::MakeLocalTrack(
         {10.0f, 10.0f},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        velocity);
+        velocity,
+        true);
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {10.0f, 10.0f},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        velocity);
+        velocity,
+        true);
 
     EXPECT_TRUE(IsCompatible(
         candidate, track, SourceKind::TRACK));
@@ -263,17 +273,17 @@ TEST(TrackCompatibilityTests, AcceptsMatchingVelocityAndClassification)
 
 TEST(TrackCompatibilityTests, RejectsConflictingKnownClassifications)
 {
-    RadarTrack candidate = MakeRadarTrack(
+    RadarTrack candidate = radar_test::MakeLocalTrack(
         {},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(1000.0f));
+        radar_test::VelocityFromKnots(1000.0f),
+        true);
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {},
         ThreatClass::SURFACE_SHIP,
-        true,
-        VelocityFromKnots(1000.0f));
+        radar_test::VelocityFromKnots(1000.0f),
+        true);
 
     EXPECT_FALSE(IsCompatible(
         candidate, track, SourceKind::TRACK));
@@ -281,17 +291,17 @@ TEST(TrackCompatibilityTests, RejectsConflictingKnownClassifications)
 
 TEST(TrackCompatibilityTests, RejectsExcessiveVelocityDifference)
 {
-    RadarTrack candidate = MakeRadarTrack(
+    RadarTrack candidate = radar_test::MakeLocalTrack(
         {},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(1500.0f));
+        radar_test::VelocityFromKnots(1500.0f),
+        true);
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(500.0f));
+        radar_test::VelocityFromKnots(500.0f),
+        true);
 
     EXPECT_FALSE(IsCompatible(
         candidate, track, SourceKind::TRACK));
@@ -299,17 +309,17 @@ TEST(TrackCompatibilityTests, RejectsExcessiveVelocityDifference)
 
 TEST(TrackCompatibilityTests, RejectsExcessiveHeadingDifference)
 {
-    RadarTrack candidate = MakeRadarTrack(
+    RadarTrack candidate = radar_test::MakeLocalTrack(
         {},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(100.0f, 60.0f));
+        radar_test::VelocityFromKnots(100.0f, 60.0f),
+        true);
 
-    RadarTrack track = MakeRadarTrack(
+    RadarTrack track = radar_test::MakeLocalTrack(
         {},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(100.0f, 0.0f));
+        radar_test::VelocityFromKnots(100.0f, 0.0f),
+        true);
 
     EXPECT_FALSE(IsCompatible(
         candidate, track, SourceKind::TRACK));
@@ -321,11 +331,11 @@ TEST(TrackCompatibilityTests, RejectsExcessiveHeadingDifference)
 
 TEST(CandidateGenerationTests, ReturnsCandidateInsideGate)
 {
-    RadarTrack source = MakeRadarTrack(
+    RadarTrack source = radar_test::MakeLocalTrack(
         {10.0f, 10.0f},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(1000.0f));
+        radar_test::VelocityFromKnots(1000.0f),
+        true);
 
     RadarTrack target = source;
 
@@ -342,17 +352,17 @@ TEST(CandidateGenerationTests, ReturnsCandidateInsideGate)
 
 TEST(CandidateGenerationTests, RejectsCandidateOutsideGate)
 {
-    RadarTrack source = MakeRadarTrack(
+    RadarTrack source = radar_test::MakeLocalTrack(
         {100.0f, 100.0f},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(1000.0f));
+        radar_test::VelocityFromKnots(1000.0f),
+        true);
 
-    RadarTrack target = MakeRadarTrack(
+    RadarTrack target = radar_test::MakeLocalTrack(
         {0.0f, 0.0f},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(1000.0f));
+        radar_test::VelocityFromKnots(1000.0f),
+        true);
 
     std::vector<RadarTrack> sources{source};
     std::vector<RadarTrack> targets{target};
@@ -368,17 +378,17 @@ TEST(CandidateGenerationTests, PreservesSourceAndTargetIndices)
     std::vector<RadarTrack> sources;
     std::vector<RadarTrack> targets;
 
-    sources.push_back(MakeRadarTrack(
+    sources.push_back(radar_test::MakeLocalTrack(
         {10.0f, 10.0f},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(1000.0f)));
+        radar_test::VelocityFromKnots(1000.0f),
+        true));
 
-    sources.push_back(MakeRadarTrack(
+    sources.push_back(radar_test::MakeLocalTrack(
         {20.0f, 20.0f},
         ThreatClass::MISSILE_INBOUND,
-        true,
-        VelocityFromKnots(1000.0f)));
+        radar_test::VelocityFromKnots(1000.0f),
+        true));
 
     targets.push_back(sources[0]);
     targets.push_back(sources[1]);

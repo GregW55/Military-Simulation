@@ -2,7 +2,7 @@
 #include <random>
 
 #include "Constants.h"
-#include "GeoEngine.h"
+#include "MapProjection.h"
 #include "../ecs/components.h"
 #include "../ecs/Systems.h"
 #include "../models/TacticalData.h"
@@ -12,26 +12,6 @@
 #include "../utils/MetricsLogger.h"
 #include <vector>
 #include <string>
-
-namespace {
-    // Reads a heightmap image into one byte per pixel (the red channel).
-    // This is the only place terrain data touches raylib.
-    bool LoadHeightMapPixels(const std::string& path, std::vector<uint8_t>& elevation, int& width, int& height) {
-        Image image = LoadImage(path.c_str());
-        if (image.width <= 0 || image.height <= 0) return false;
-
-        Color* pixels = LoadImageColors(image);
-        width = image.width;
-        height = image.height;
-
-        elevation.resize(static_cast<size_t>(width) * height);
-        for (size_t i = 0; i < elevation.size(); ++i) elevation[i] = pixels[i].r;
-
-        UnloadImageColors(pixels);
-        UnloadImage(image);
-        return true;
-    }
-}
 
 bool AegisEngine::Initialize(const bool headless, int seed) {
     isHeadless = headless;
@@ -53,17 +33,20 @@ bool AegisEngine::Initialize(const bool headless, int seed) {
     registry.ctx().emplace<SharedThreatPicture>();
     registry.ctx().emplace<MasterTrackTable>();
 
-    // Same offsets and scale the renderer draws the heightmap with, so what you see and what the radar uses can't drift apart.
-    std::vector<uint8_t> elevation;
-    int hmWidth = 0, hmHeight = 0;
-    if (LoadHeightMapPixels(scenario.heightMap.filepath, elevation, hmWidth, hmHeight)) {
-        registry.ctx().get<MapProjection>().SetHeightMap(std::move(elevation), hmWidth, hmHeight,
-            scenario.heightMap.offsetX + OFFSET_X,
-            scenario.heightMap.offsetY + OFFSET_Y,
-            scenario.heightMap.scale);
+    // One terrain source for radar line-of-sight now, and for the 3D renderer later.
+    if (!registry.ctx().get<MapProjection>().LoadTerrain("../assets/terrain/terrain.bin")) {
+        std::cerr << "Failed to load terrain. Check that ../assets/terrain/terrain.bin exists relative to the "
+                     "working directory, and rerun make_terrain.py if it is invalid.\n";
+        return false;
+    }
+    {   // TEMPORARY: remove after checking
+        auto& m = registry.ctx().get<MapProjection>();
+        std::cout << "Yushan:   " << m.GetElevation(m.GeoToNM(23.47f, 120.957f)) << " m (expect ~3500-3900)\n";
+        std::cout << "Open sea: " << m.GetElevation(m.GeoToNM(24.5f, 125.5f))   << " m (expect 0)\n";
     }
 
     if (!headless) renderer.Init(scenario);
+    if (!headless) renderer.BuildTerrain(registry.ctx().get<MapProjection>(), "../assets/terrain");
 
     SpawnScenarioUnits();
     MetricsLogger::Initialize("metrics.csv", seed);

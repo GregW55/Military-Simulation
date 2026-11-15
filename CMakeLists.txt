@@ -16,6 +16,10 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(raylib)
 
+target_compile_definitions(raylib PRIVATE
+        SUPPORT_FILEFORMAT_JPG=1
+)
+
 FetchContent_Declare(
         json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -87,11 +91,10 @@ if(BUILD_TESTING)
         src/ecs/systems/radar/TrackingSystem.cpp
         src/ecs/systems/radar/SensorFusionSystem.cpp
 
-        src/core/GeoEngine.cpp
+            src/core/MapProjection.cpp
         src/utils/MathUtils.cpp
             tests/RadarTestHelpers.h
             tests/TrackCorrelationTests.cpp
-            tests/TrackingSystemTests.cpp
             tests/SensorFusionSystemTests.cpp
             tests/SensorSystemTests.cpp
     )

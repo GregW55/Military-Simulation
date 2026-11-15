@@ -44,7 +44,7 @@ inline RadarTrack MakeCorrelationTrack(
 }
 
 inline RadarTrack MakeLocalTrack(
-    MathUtils::Vec2 position,
+    MathUtils::Vec2 position = {10.0f, 10.0f},
     ThreatClass classification = ThreatClass::UNKNOWN,
     MathUtils::Vec2 velocity = {0.0f, 0.0f},
     bool hasVelocity = true,

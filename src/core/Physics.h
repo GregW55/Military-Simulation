@@ -1,6 +1,6 @@
 #pragma once
 #include <cmath>
-#include "GeoEngine.h"
+#include "MapProjection.h"
 #include "Constants.h"
 
 /* DO NOT MODIFY ANY VARIABLES IN THIS FILE

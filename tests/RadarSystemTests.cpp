@@ -2,11 +2,13 @@
 
 #include <array>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <cstdint>
 #include <vector>
 
 #include "core/Constants.h"
-#include "core/GeoEngine.h"
+#include "core/MapProjection.h"
 #include "ecs/Systems.h"
 #include "ecs/components.h"
 #include "utils/TrackCorrelation.h"
@@ -197,16 +199,29 @@ protected:
 
     TEST_F(RadarSystemsTest, TerrainCanBlockAnOtherwiseInRangeTarget)
     {
-        // The map transform makes world y = -30 NM land near heightmap row 199.
-        // Put a 4,000 m ridge across the observer-target path.
-        constexpr int width = 300;
-        constexpr int height = 300;
-        std::vector<uint8_t> elevations(static_cast<std::size_t>(width * height), 0);
-        for (int x = 10; x <= 25; ++x) {
-            elevations[static_cast<std::size_t>(199 * width + x)] = 255;
+        // Terrain box in world NM: x from -5 to 15, y from -40 to -20, 21x21 vertices = one cell per NM.
+        // Row 0 is the north edge (y = -20), so row j sits at y = -20 - j, and column i at x = -5 + i.
+        constexpr int n = 21;
+        std::vector<float> heights(static_cast<size_t>(n) * n, 0.0f);
+        for (int j = 0; j < n; ++j)
+            for (int i = 7; i <= 9; ++i)               // ridge at world x = 2..4 NM, 4,000 m tall, across every row
+                heights[static_cast<size_t>(j) * n + i] = 4000.0f;
+
+        const auto nw = Map().NMToGeo({-5.0f, -20.0f});    // returns {lon, lat}
+        const auto se = Map().NMToGeo({15.0f, -40.0f});
+        const float bounds[4] = {se.y, nw.y, nw.x, se.x};  // latMin, latMax, lonMin, lonMax
+
+        const auto path = std::filesystem::temp_directory_path() / "radar_test_terrain.bin";
+        {
+            std::ofstream f(path, std::ios::binary);
+            const int32_t dim = n;
+            f.write(reinterpret_cast<const char*>(&dim), 4);
+            f.write(reinterpret_cast<const char*>(&dim), 4);
+            f.write(reinterpret_cast<const char*>(bounds), 16);
+            f.write(reinterpret_cast<const char*>(heights.data()), static_cast<std::streamsize>(heights.size() * 4));
         }
-        Map().SetHeightMap(std::move(elevations), width, height,
-                           -528.0f, -930.0f, 1.0f);
+        ASSERT_TRUE(Map().LoadTerrain(path.string()));
+        std::filesystem::remove(path);
 
         const entt::entity observer = AddObserver({0.0f, -30.0f});
         AddTarget({5.0f, -30.0f}, true);

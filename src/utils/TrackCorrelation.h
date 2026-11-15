@@ -155,7 +155,7 @@ namespace TrackCorrelation {
                 const float distSq = MathUtils::GetDistanceSq(source.pos, target.pos);
                 if (!IsWithinGate(distSq, gateNM))
                 {
-                    if (sourceKind == SourceKind::PING)
+                    /*if (sourceKind == SourceKind::PING)
                     {
                         std::fprintf(stderr,
                             "[GATE REJECT] "
@@ -186,16 +186,16 @@ namespace TrackCorrelation {
 
                             static_cast<int>(target.hasVelocity),
                             static_cast<int>(target.classification));
-                    }
+                    } */
 
                     continue;
                 }
                 if (!IsCompatible(source, target, sourceKind)) {
-                    if (target.classification == source.classification) {
+                    /* if (target.classification == source.classification) {
                         if (sourceKind == SourceKind::PING)
                             std::fprintf(stderr, "[COMPAT REJECT] dist=%.4f age=%.3f trackKts=%.0f class=%d\n",
                                 std::sqrt(distSq), target.ageSec, target.speedKnots, (int)target.classification);
-                    }
+                    } */
                     continue;
                 }
 
