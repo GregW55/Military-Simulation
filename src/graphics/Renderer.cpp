@@ -241,7 +241,7 @@ void Renderer::UnloadTerrain() {
 void Renderer::ProcessInput() {
     if (IsKeyPressed(KEY_UP)) timeScale *= 2.0f;
     if (IsKeyPressed(KEY_DOWN)) timeScale /= 2.0f;
-    if (timeScale < 1.0f) timeScale = 1.0f;
+    if (timeScale < 0.1f) timeScale = 0.1f;
     if (timeScale > 10000.0f) timeScale = 10000.0f;
 
     if (IsKeyPressed(KEY_R)) showRadarRings = !showRadarRings;
@@ -348,7 +348,7 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
                 labels.push_back({{scr.x + 10.0f, scr.y - 20.0f},
                     TextFormat("MISSILE\nAlt: %.0fm\nSpd: %.1f kts", tf.altitude, kin->currentSpeedKnots), PURPLE});
                 if (const auto* seeker = registry.try_get<SeekerHead>(entity)) {
-                    const Vector3 tgt = ToRender(seeker->targetPos, map.GetElevation(seeker->targetPos));
+                    const Vector3 tgt = ToRender(seeker->targetPos, seeker->targetAltitude);
                     DrawLine3D(pos, tgt, Fade(PURPLE, 0.7f));
                     DrawSphereWires(tgt, markerR * 2.0f, 6, 6, PURPLE);
                 }
@@ -361,8 +361,13 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
     for (const auto& [observerEntity, targetList] : detectionData.activeTracks) {
         if (!registry.valid(observerEntity)) continue;
         const auto& obsTf = registry.get<Transform2D>(observerEntity);
-        for (const auto& trk : targetList)
-            DrawLine3D(ToRender(obsTf.pos, obsTf.altitude), ToRender(trk.pos, trk.altitude), Fade(YELLOW, 0.15f));
+        for (const auto& trk : targetList) {
+            const Color tc = trk.isMissing ? GRAY : YELLOW;            // gray = coasting, not seen last scan
+            const Vector3 tp = ToRender(trk.pos, trk.altitude);
+            DrawLine3D(ToRender(obsTf.pos, obsTf.altitude), tp, Fade(tc, 0.12f));
+            DrawSphereWires(tp, markerR * 1.6f, 6, 6, tc);
+            DrawLine3D(tp, ToRender(trk.pos, map.GetElevation(trk.pos)), Fade(tc, 0.25f));   // altitude stalk
+        }
     }
 
     EndMode3D();

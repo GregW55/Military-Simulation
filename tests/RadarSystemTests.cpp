@@ -730,42 +730,25 @@ protected:
     // TrackCorrelation::GetTrackGateNM tests
     // -----------------------------------------------------------------------------
 
-    TEST_F(RadarSystemsTest, UnconfirmedTrackGateUsesClassMaximumSpeed)
+    TEST_F(RadarSystemsTest, TrackWithoutVelocityUsesGlobalMaximumSpeedGate)
     {
         RadarTrack track = MakeCorrelationTrack(
-            {0.0f, 0.0f},
-            {0.0f, 0.0f},
-            2.0f,
-            ThreatClass::SURFACE_SHIP,
-            false);
+            {0.0f, 0.0f}, {0.0f, 0.0f}, 2.0f, ThreatClass::UNKNOWN, false);
 
-        const float gate =
-            TrackCorrelation::GetTrackGateNM(track);
+        const float expected = TRACK_POSITION_TOLERANCE_NM + TRACK_MAX_SPEED_NM_S * 2.0f;
 
-        const float expected =
-            TRACK_POSITION_TOLERANCE_NM +
-            (MAX_SHIP_SPEED_KTS * KNOTS_TO_NM_PER_SEC * 2.0f);
-
-        EXPECT_NEAR(gate, expected, kEpsilon);
+        EXPECT_NEAR(TrackCorrelation::GetTrackGateNM(track), expected, kEpsilon);
     }
 
-    TEST_F(RadarSystemsTest, UnknownTrackGateUsesLooseMaximumSpeed)
+    TEST_F(RadarSystemsTest, GateTightensOnceVelocityIsKnown)
     {
-        RadarTrack track = MakeCorrelationTrack(
-            {0.0f, 0.0f},
-            {0.0f, 0.0f},
-            2.0f,
-            ThreatClass::UNKNOWN,
-            false);
+        RadarTrack noVelocity = MakeCorrelationTrack(
+            {0.0f, 0.0f}, {0.0f, 0.0f}, 2.0f, ThreatClass::SURFACE_SHIP, false);
+        RadarTrack withVelocity = MakeCorrelationTrack(
+            {0.0f, 0.0f}, {0.0f, 0.0f}, 2.0f, ThreatClass::SURFACE_SHIP, true);
 
-        const float gate =
-            TrackCorrelation::GetTrackGateNM(track);
-
-        const float expected =
-            TRACK_POSITION_TOLERANCE_NM +
-            (MAX_PLAUSIBLE_SPEED_KNOTS * KNOTS_TO_NM_PER_SEC * 2.0f);
-
-        EXPECT_NEAR(gate, expected, kEpsilon);
+        EXPECT_LT(TrackCorrelation::GetTrackGateNM(withVelocity),
+                  TrackCorrelation::GetTrackGateNM(noVelocity));
     }
 
 
