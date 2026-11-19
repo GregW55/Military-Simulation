@@ -57,6 +57,7 @@ struct Kinematics {
     float currentSpeedKnots = 0.0f;
     float desiredSpeedKnots = 0.0f;
     float accelerationRate = 0.0f;
+    float verticalVelocityNMPerSec = 0.0f;
 };
 
 struct Aerodynamics {
@@ -79,36 +80,74 @@ struct Aerodynamics {
 // =====================================
 // === SENSORS & TRACKING COMPONENTS ===
 // =====================================
+struct KalmanState3D {
+    // State: x, y, z, vx, vy, vz
+    // Position: NM
+    // Velocity: NM/sec
+    std::array<float, 6> x{};
+
+    // 6x6 covariance matrix, row-major
+    std::array<float, 36> P{};
+
+    float timestampSec = 0.0f;
+    uint32_t measurementCount = 0;
+    bool initialized = false;
+    float processNoiseAccelPSD = KALMAN_PSD_UNKNOWN;    // switched when the class is confirmed
+};
+
 struct RadarEmitter {
-    float rangeNM = 0.0f;
-    float rangeNmSq = 0.0f;
-    float scanRateSec = 2.0f;
-    float timeSinceLastScan = 0.0f;
+    // Radar configuration
+    float maxRangeNM = 0.0f;                            // Maximum range the radar can report
+    float maxRangeNmSq = 0.0f;                          // Maximum range the radar can report(squared)
+    float scanRateSec = 2.0f;                           // Time between search updates
+
+    // Scan timing
+    float timeSinceLastScan = 0.0f;                     // Time since last scan
+
+    // Measurement accuracy (standard deviations)
+    float rangeErrorNM = 0.01f;
+    float angleErrorRadians = 0.001f;
+    float velocityErrorKnots = 5.0f;
 };
 
 struct RadarSignature {
-    float rcs = 0.0f;  // Radar Cross-Section (m^2)
+    float rcsM2 = 0.0f;                                 // Radar Cross-Section (m^2)
     float rcsFourthRoot = 0.0f;
 };
 
+struct RadarMeasurement {
+    float rangeNM;
+    float azimuthRadians;
+    float elevationRadians;
+    float radialVelocityKnots;
+
+    float timestampSec;
+};
+
 struct RadarTrack {
-    uint32_t globalTrackId = 0;  // Linked to the MasterTrackTable ID
+    uint32_t globalTrackId = NO_GLOBAL_TRACK;                         // Linked to the MasterTrackTable ID
+
     MathUtils::Vec2 latestPing;
     MathUtils::Vec2 pos;
     MathUtils::Vec2 vel;
+
     float altitude = 0.0f;
     float ageSec = 0.0f;
     bool hasVelocity = false;
     bool isMissing = false;
 
-    float speedKnots = 0.0f;                                            // Derived from vel magnitude each update
-    float closingSpeedKnots = 0.0f;                                     // Positive = closing on observer, negative = opening
-    float timeToImpactSec = -1.0f;                                      // -1 means not on intercept course
-    float threatScore = 0.0f;                                           // Higher = more urgent
+    float speedKnots = 0.0f;                            // Derived from vel magnitude each update
+    float closingSpeedKnots = 0.0f;                     // Positive = closing on observer, negative = opening
+    float timeToImpactSec = -1.0f;                      // -1 means not on intercept course
+    float threatScore = 0.0f;                           // Higher = more urgent
+
     ThreatClass classification = ThreatClass::UNKNOWN;
     float consistentObservationSec = 0.0f;
-    ThreatClass pendingClass = ThreatClass::UNKNOWN;                    // ThreatClass we think it is, only after CLASSIFICATION_CONFIRM_SEC can we confirm
-    float pendingSec = 0.0f;                                            // How long the threat class has been pending
+    ThreatClass pendingClass = ThreatClass::UNKNOWN;    // ThreatClass we think it is, only after CLASSIFICATION_CONFIRM_SEC can we confirm
+    float pendingSec = 0.0f;                            // How long the threat class has been pending
+
+    KalmanState3D kalman;
+    float measurementSigmaNM = 0.0f;                    // 1-sigma horizontal error of a ping-derived observation
 };
 
 struct SharedThreatPicture {
@@ -131,7 +170,7 @@ struct RadarDetectionData {
     std::unordered_map<entt::entity, std::vector<RadarTrack>> activeTracks;
 
     // Transient pings generated this frame by SensorSystem, consumed by TrackingSystem
-    std::unordered_map<entt::entity, std::vector<RadarTrack>> framePings;
+    std::unordered_map<entt::entity, std::vector<RadarMeasurement>> frameMeasurements;
 };
 
 struct MasterTrackTable {

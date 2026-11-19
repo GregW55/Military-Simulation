@@ -29,9 +29,6 @@ namespace {
         RadarTrack* best = nullptr;
 
         for (auto& track : myTracks) {
-            // Do not silently change the missile's assigned target.
-            if (seeker.targetGlobalTrackId != 0 && track.globalTrackId != seeker.targetGlobalTrackId) continue;
-
             const float distToTrack = MathUtils::GetDistance(trans.pos, track.pos);
             if (distToTrack < 0.001f) continue;
 
@@ -96,9 +93,6 @@ namespace {
                         track.vel, seeker.targetVel) > MAX_PLAUSIBLE_VEL_CHANGE_KNOTS) {
                     continue;
                 }
-
-                // Prefer the original system track when it is still available
-                if (seeker.targetGlobalTrackId != 0 && track.globalTrackId != seeker.targetGlobalTrackId) continue;
 
                 closestDist = d;
                 best = &track;
@@ -341,7 +335,7 @@ namespace {
 
         bool foundTarget = brain.hasTarget;
 
-        if (foundTarget && closestDist < registry.get<RadarEmitter>(entity).rangeNM) {
+        if (foundTarget && closestDist < registry.get<RadarEmitter>(entity).maxRangeNM) {
             if (brain.currentState == TacticalState::PATROL || brain.currentState == TacticalState::TRANSIT) {
                 if (!brain.pendingEngagement) {
                     brain.pendingEngagement = true;
@@ -448,8 +442,7 @@ namespace {
 
     float Systems::PlanMissileAltitude(const Transform2D& trans, const Kinematics& kin,
             const Aerodynamics& aero, const SeekerHead&seeker) {
-        float targetAlt = trans.altitude;  // no live target: hold altitude
-
+        float targetAlt = 0;
         if (seeker.hasLiveTarget) {
             targetAlt = aero.cruiseAltitudeMeters < 100.0f ? 10000.0f : aero.cruiseAltitudeMeters;
 

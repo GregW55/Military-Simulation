@@ -110,15 +110,41 @@ namespace
     }
 
 
-    void UpdateMovementForEntity(entt::registry& registry, entt::entity entity, float deltaTime) {
+    void UpdateMovementForEntity(
+    entt::registry& registry,
+    entt::entity entity,
+    float deltaTime)
+    {
         auto& transform = registry.get<Transform2D>(entity);
-
         auto& kin = registry.get<Kinematics>(entity);
 
-        if (registry.try_get<Aerodynamics>(entity)) UpdateAdvancedFlightPhysics(registry, entity, transform,kin, deltaTime);
-        else UpdateStandardHydrodynamics(kin, deltaTime);
+        const float previousAltitude = transform.altitude;
 
-        UpdateVelocityAndPosition(transform,kin,deltaTime);
+        if (registry.try_get<Aerodynamics>(entity))
+            UpdateAdvancedFlightPhysics(
+                registry,
+                entity,
+                transform,
+                kin,
+                deltaTime
+            );
+        else
+            UpdateStandardHydrodynamics(kin, deltaTime);
+
+        UpdateVelocityAndPosition(transform, kin, deltaTime);
+
+        // Convert the altitude change from meters to NM/sec.
+        if (deltaTime > 0.0f)
+        {
+            kin.verticalVelocityNMPerSec =
+                (transform.altitude - previousAltitude) /
+                METERS_PER_NM /
+                deltaTime;
+        }
+        else
+        {
+            kin.verticalVelocityNMPerSec = 0.0f;
+        }
     }
 
 

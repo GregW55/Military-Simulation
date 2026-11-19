@@ -24,23 +24,20 @@ TEST(TrackGateTests, NoVelocityGateUsesMaximumSpeedAndAge)
     EXPECT_NEAR(GetTrackGateNM(track), expected, 0.000001f);
 }
 
-TEST(TrackGateTests, VelocityGateUsesVelocityErrorAndAcceleration)
+TEST(TrackGateTests, KnownVelocityWithoutInitializedKalmanUsesFallbackGate)
 {
     RadarTrack track =
-        radar_test::MakeLocalTrack({}, ThreatClass::MISSILE_INBOUND,
-{0.2f, 0.0f}, true);
+        radar_test::MakeLocalTrack(
+            {},
+            ThreatClass::MISSILE_INBOUND,
+            {0.2f, 0.0f},
+            true);
 
     track.ageSec = 0.5f;
 
-    const float t = track.ageSec;
-
-    const float velocityError =
-        MAX_PLAUSIBLE_VEL_CHANGE_KNOTS * KNOTS_TO_NM_PER_SEC;
-
     const float expected =
         TRACK_POSITION_TOLERANCE_NM
-        + velocityError * t
-        + 0.5f * TRACK_MAX_ACCEL_NM_S2 * t * t;
+        + TRACK_MAX_SPEED_NM_S * track.ageSec;
 
     EXPECT_NEAR(GetTrackGateNM(track), expected, 0.000001f);
 }
@@ -80,11 +77,46 @@ TEST(TrackGateTests, PositionOutsideGateIsRejected)
     EXPECT_FALSE(IsWithinGate(distance * distance, gate));
 }
 
+TEST(TrackGateTests, InitializedTrackGateUsesLargestPositionCovarianceEigenvalue)
+{
+    RadarTrack track = radar_test::MakeLocalTrack(
+        {}, ThreatClass::MISSILE_INBOUND, {}, false);
+
+    track.kalman.initialized = true;
+    track.kalman.P.fill(0.0f);
+    track.kalman.P[0] = 0.04f;
+    track.kalman.P[7] = 0.01f;
+    track.kalman.P[1] = 0.0f;
+    track.kalman.P[6] = 0.0f;
+
+    const float expected =
+        TRACK_POSITION_TOLERANCE_NM + 3.034f * 0.2f;
+
+    EXPECT_NEAR(GetTrackGateNM(track), expected, 1.0e-5f);
+}
+
+TEST(TrackGateTests, LargerPositionUncertaintyProducesLargerAssociationGate)
+{
+    RadarTrack narrow = radar_test::MakeLocalTrack(
+        {}, ThreatClass::MISSILE_INBOUND, {}, false);
+    RadarTrack broad = narrow;
+
+    narrow.kalman.initialized = true;
+    broad.kalman.initialized = true;
+    narrow.kalman.P.fill(0.0f);
+    broad.kalman.P.fill(0.0f);
+
+    narrow.kalman.P[0] = narrow.kalman.P[7] = 0.01f;
+    broad.kalman.P[0] = broad.kalman.P[7] = 0.25f;
+
+    EXPECT_LT(GetTrackGateNM(narrow), GetTrackGateNM(broad));
+}
+
 // ============================================================
 // PING COMPATIBILITY TESTS
 // ============================================================
 
-TEST(PingCompatibilityTests, RejectsTrackWithZeroAge)
+TEST(PingCompatibilityTests, AcceptsPingAtZeroAgeWhenAltitudeIsValid)
 {
     RadarTrack track =
         radar_test::MakeLocalTrack({}, ThreatClass::MISSILE_INBOUND,
@@ -94,7 +126,7 @@ TEST(PingCompatibilityTests, RejectsTrackWithZeroAge)
 
     RadarTrack ping = radar_test::MakePing({0.0f, 0.0f});
 
-    EXPECT_FALSE(IsCompatible(
+    EXPECT_TRUE(IsCompatible(
         ping, track, SourceKind::PING));
 }
 
@@ -126,7 +158,7 @@ TEST(PingCompatibilityTests, AcceptsConstantVelocityMissile)
         ping, track, SourceKind::PING));
 }
 
-TEST(PingCompatibilityTests, RejectsSpeedAboveShipLimit)
+TEST(PingCompatibilityTests, DoesNotInferSpeedFromSinglePing)
 {
     constexpr float age = 1.0f;
 
@@ -148,7 +180,7 @@ TEST(PingCompatibilityTests, RejectsSpeedAboveShipLimit)
     RadarTrack ping = radar_test::MakePing(
         MathUtils::Scale(velocity, age));
 
-    EXPECT_FALSE(IsCompatible(
+    EXPECT_TRUE(IsCompatible(
         ping, track, SourceKind::PING));
 }
 
@@ -170,7 +202,7 @@ TEST(PingCompatibilityTests, RejectsAltitudeAboveClassLimit)
         ping, track, SourceKind::PING));
 }
 
-TEST(PingCompatibilityTests, RejectsShipAccelerationAboveLimit)
+TEST(PingCompatibilityTests, DoesNotInferAccelerationFromSinglePing)
 {
     constexpr float age = 1.0f;
 
@@ -198,11 +230,11 @@ TEST(PingCompatibilityTests, RejectsShipAccelerationAboveLimit)
         MathUtils::Scale(
             radar_test::VelocityFromKnots(impossibleSpeed), age));
 
-    EXPECT_FALSE(IsCompatible(
+    EXPECT_TRUE(IsCompatible(
         ping, track, SourceKind::PING));
 }
 
-TEST(PingCompatibilityTests, RejectsShipHeadingChangeAboveLimit)
+TEST(PingCompatibilityTests, DoesNotInferHeadingChangeFromSinglePing)
 {
     constexpr float age = 1.0f;
     constexpr float speed = MAX_SHIP_SPEED_KTS * 0.5f;
@@ -224,7 +256,7 @@ TEST(PingCompatibilityTests, RejectsShipHeadingChangeAboveLimit)
         MathUtils::Scale(
             radar_test::VelocityFromKnots(speed, 90.0f), age));
 
-    EXPECT_FALSE(IsCompatible(
+    EXPECT_TRUE(IsCompatible(
         ping, track, SourceKind::PING));
 }
 

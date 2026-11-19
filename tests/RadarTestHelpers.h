@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <cmath>
@@ -13,6 +14,10 @@ namespace radar_test {
 
 inline constexpr float kEpsilon = 1.0e-3f;
 inline constexpr float kObserverAltitudeM = 30.0f;
+
+// ============================================================
+// TRACK FACTORIES
+// ============================================================
 
 inline RadarTrack MakePing(
     MathUtils::Vec2 position,
@@ -64,13 +69,39 @@ inline RadarTrack MakeLocalTrack(
     track.classification = classification;
     track.hasVelocity = hasVelocity;
     track.speedKnots = MathUtils::NmPerSecToKnots(MathUtils::Length(velocity));
+
     return track;
 }
+
+// ============================================================
+// MEASUREMENT FACTORY
+// ============================================================
+
+inline RadarMeasurement MakeMeasurement(
+    float rangeNM,
+    float azimuthRadians,
+    float elevationRadians = 0.0f,
+    float radialVelocityKnots = 0.0f,
+    float timestampSec = 0.0f)
+{
+    RadarMeasurement measurement{};
+    measurement.rangeNM = rangeNM;
+    measurement.azimuthRadians = azimuthRadians;
+    measurement.elevationRadians = elevationRadians;
+    measurement.radialVelocityKnots = radialVelocityKnots;
+    measurement.timestampSec = timestampSec;
+
+    return measurement;
+}
+
+// ============================================================
+// VELOCITY UTILITY
+// ============================================================
 
 inline MathUtils::Vec2 VelocityFromKnots(
     float speedKnots,
     float directionDegrees = 0.0f)
-{;
+{
     const float radians = directionDegrees * DEG_TO_RAD;
     const float speedNmPerSec = speedKnots * KNOTS_TO_NM_PER_SEC;
 
@@ -80,13 +111,30 @@ inline MathUtils::Vec2 VelocityFromKnots(
     };
 }
 
-inline void SubmitPings(
+// ============================================================
+// DATA SUBMISSION HELPERS
+// ============================================================
+
+// Submit already-created tracker estimates.
+// Used by tracking, correlation, and fusion tests.
+inline void SubmitTracks(
     RadarDetectionData& detectionData,
     entt::entity observer,
-    std::vector<RadarTrack> pings)
+    std::vector<RadarTrack> tracks)
 {
-    detectionData.framePings.clear();
-    detectionData.framePings.emplace(observer, std::move(pings));
+    detectionData.activeTracks.insert_or_assign(
+        observer, std::move(tracks));
+}
+
+// Submit raw sensor measurements.
+// Used by tests that exercise tracking using measurement input.
+inline void SubmitMeasurements(
+    RadarDetectionData& detectionData,
+    entt::entity observer,
+    std::vector<RadarMeasurement> measurements)
+{
+    detectionData.frameMeasurements.insert_or_assign(
+        observer, std::move(measurements));
 }
 
 } // namespace radar_test

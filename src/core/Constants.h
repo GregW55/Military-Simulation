@@ -22,7 +22,7 @@ constexpr float DRAG_COEFF_SUPERSONIC = 0.3f;
 // 2. UNIT CONVERSION FACTORS
 // ==========================================
 // Distance & Scale
-constexpr float NM_TO_METERS = 1852.0f;
+constexpr float METERS_PER_NM = 1852.0f;
 constexpr float METERS_TO_FT = 3.28084f;
 constexpr float NM_PER_LAT_DEG = 60.0f;
 
@@ -30,8 +30,8 @@ constexpr float NM_PER_LAT_DEG = 60.0f;
 constexpr float SECONDS_PER_HOUR = 3600.0f;
 constexpr float KNOTS_TO_NM_PER_SEC = 1.0f / SECONDS_PER_HOUR;          // Divide by 3600 (hrs to sec)
 constexpr float NM_PER_SEC_TO_KNOTS = SECONDS_PER_HOUR;                 // Multiply by 3600 (sec to hrs)
-constexpr float MPS_PER_KNOT = NM_TO_METERS / SECONDS_PER_HOUR;
-constexpr float KNOTS_PER_MPS = SECONDS_PER_HOUR / NM_TO_METERS;
+constexpr float MPS_PER_KNOT = METERS_PER_NM / SECONDS_PER_HOUR;
+constexpr float KNOTS_PER_MPS = SECONDS_PER_HOUR / METERS_PER_NM;
 
 // Angles
 constexpr float RAD_TO_DEG = 180.0f / MATH_PI;
@@ -59,14 +59,19 @@ constexpr float PX_PER_KNOT_SEC = PX_PER_NM / SECONDS_PER_HOUR;
 // ==========================================
 // 4. TACTICAL TRACKS & CONTACTS
 // ==========================================
-constexpr float TRACK_MAX_ACCEL_NM_S2 = MAX_TRACKED_ACCEL_G * GRAVITY_MPS2 / NM_TO_METERS;
+constexpr float TRACK_MAX_ACCEL_NM_S2 = MAX_TRACKED_ACCEL_G * GRAVITY_MPS2 / METERS_PER_NM;
 constexpr float TRACK_POSITION_TOLERANCE_NM = 0.02f;                    // Slop allowance for float precision
+
+// Process-noise power spectral densities, (NM/s^2)^2 * s. Continuous-time, so independent of fixedDelta.
+constexpr float KALMAN_PSD_UNKNOWN = 1.0e-7f;   // unclassified: needs to converge enough to classify
+constexpr float KALMAN_PSD_SHIP    = 1.0e-8f;   // ~0.06 m/s^2 of maneuvering
+constexpr float KALMAN_PSD_MISSILE = 1.0e-4f;   // ~2 g
 
 constexpr float MAX_PLAUSIBLE_SPEED_KNOTS = 4500.0f;
 constexpr float TRACK_MAX_SPEED_NM_S = MAX_PLAUSIBLE_SPEED_KNOTS * KNOTS_TO_NM_PER_SEC;
 constexpr float MAX_PLAUSIBLE_VEL_CHANGE_KNOTS = 800.0f;
 
-constexpr float TRACK_DELETION_TIMEOUT_SEC = 5.0f;                      // Removed entirely after unrefreshed
+constexpr float TRACK_DELETION_TIMEOUT_SEC = 10.0f;                     // Removed entirely after unrefreshed
 constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 3.0f;                  // Must be fresher than this to engage/lock
 constexpr float TRACK_MIN_ACTIONABLE_AGE_SEC = 0.0001f;
 
@@ -105,7 +110,7 @@ constexpr float WEAPON_COOLDOWN = 0.5f;
 // 8. THREAT CLASSIFICATION THRESHOLDS
 // ==========================================
 // Speed thresholds separating contact/threat types
-constexpr float MAX_SHIP_ALTITUDE_M = 40.0f;                            // Max altitude before reclassifying
+constexpr float MAX_SHIP_ALTITUDE_M = 60.0f;                            // Max altitude before reclassifying
 constexpr float MAX_SHIP_SPEED_KTS = 50.0f;                             // Max speed before reclassifying to UNKNOWN
 constexpr float CLASSIFICATION_CONFIRM_SEC = 2.0f;
 

@@ -143,7 +143,7 @@ namespace {
             mStats.lethalRadiusNM * mStats.lethalRadiusNM,
             baseReliability, weaponId, shooter);
 
-        registry.emplace<RadarSignature>(missile, mStats.rcs, mStats.rcsFourthRoot);
+        registry.emplace<RadarSignature>(missile, mStats.rcsM2, mStats.rcsFourthRoot);
         registry.emplace<IFF>(missile, shooterIFF.isHostile);
 
         Systems::RecordMissileFired(registry, shooter, missile,

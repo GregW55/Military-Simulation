@@ -156,6 +156,9 @@ bool MapProjection::HasLineOfSight(MathUtils::Vec2 startNM, MathUtils::Vec2 endN
     float stepDeltaY = dy * invSteps;
     float stepDeltaAlt = (endAlt - startAlt) * invSteps;
 
+    const float totalM = distNM * METERS_PER_NM;
+    constexpr float kEffR2 = 2.0f * (4.0f / 3.0f) * 6371000.0f;
+
     float currentX = startNM.x;
     float currentY = startNM.y;
     float currentAlt = startAlt;
@@ -165,7 +168,10 @@ bool MapProjection::HasLineOfSight(MathUtils::Vec2 startNM, MathUtils::Vec2 endN
         currentY += stepDeltaY;
         currentAlt += stepDeltaAlt;
 
-        if (GetElevation({currentX, currentY}) > currentAlt) {
+        const float s = totalM * (static_cast<float>(i) * invSteps);
+        const float buldge = s * (totalM - s) / kEffR2;
+
+        if (GetElevation({currentX, currentY}) + buldge > currentAlt) {
             return false;
         }
     }

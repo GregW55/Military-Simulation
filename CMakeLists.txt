@@ -48,6 +48,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # ===================================================
 # === MIN GW RUNTIME DLLS FOR THE MAIN SIMULATION ===
 # ===================================================
+
 get_filename_component(MINGW_BIN_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -69,51 +70,44 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 option(BUILD_TESTING "Build GoogleTest test targets" ON)
 
 if(BUILD_TESTING)
-
     include(CTest)
 
     FetchContent_Declare(
-        googletest
-        URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
+            googletest
+            URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
     )
-
     FetchContent_MakeAvailable(googletest)
 
-    # --------------------------------------------------------
-    # RADAR TEST EXECUTABLE
-    # EXCLUDE_FROM_ALL means the normal build skips this target.
-    # --------------------------------------------------------
-
-    add_executable(RadarSystemTests EXCLUDE_FROM_ALL
-        tests/RadarSystemTests.cpp
-
-        src/ecs/systems/radar/SensorSystem.cpp
-        src/ecs/systems/radar/TrackingSystem.cpp
-        src/ecs/systems/radar/SensorFusionSystem.cpp
-
-            src/core/MapProjection.cpp
-        src/utils/MathUtils.cpp
-            tests/RadarTestHelpers.h
-            tests/TrackCorrelationTests.cpp
-            tests/SensorFusionSystemTests.cpp
+    # The radar tests deliberately compile only the systems under test and
+    # their direct dependencies. The simulation executable is not linked into
+    # the test executable, avoiding a second main() and unrelated subsystems.
+    add_executable(RadarSystemTests
             tests/SensorSystemTests.cpp
+            tests/TrackingSystemTests.cpp
+            tests/SensorFusionSystemTests.cpp
+            tests/TrackCorrelationTests.cpp
+            tests/KalmanFilter3DTests.cpp
+            tests/RadarPipelineTests.cpp
+
+            src/ecs/systems/radar/SensorSystem.cpp
+            src/ecs/systems/radar/TrackingSystem.cpp
+            src/ecs/systems/radar/SensorFusionSystem.cpp
+            src/core/MapProjection.cpp
+            src/utils/MathUtils.cpp
+            src/utils/KalmanFilter3D.cpp
     )
 
     target_include_directories(RadarSystemTests PRIVATE
-        src
-        external
-        ${raylib_SOURCE_DIR}/src
+            src
+            external
     )
 
     target_compile_features(RadarSystemTests PRIVATE cxx_std_23)
 
     target_link_libraries(RadarSystemTests PRIVATE
-        GTest::gtest_main
-        raylib
-        nlohmann_json::nlohmann_json
+            GTest::gtest_main
     )
 
     include(GoogleTest)
     gtest_discover_tests(RadarSystemTests)
-
 endif()

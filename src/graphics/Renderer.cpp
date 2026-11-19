@@ -328,7 +328,7 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
                         const auto& tgtTf  = sigTargets.get<Transform2D>(nearest);
                         const auto& tgtSig = sigTargets.get<RadarSignature>(nearest);
                         const float effectiveRangeNM = std::min(
-                            radar->rangeNM * tgtSig.rcsFourthRoot,
+                            radar->maxRangeNM * tgtSig.rcsFourthRoot,
                             MathUtils::GetRadarHorizonNM(tf.altitude) + MathUtils::GetRadarHorizonNM(tgtTf.altitude));
 
                         DrawCircle3D(pos, effectiveRangeNM, {1.0f, 0.0f, 0.0f}, 90.0f, Fade(GREEN, 0.6f));  // radius is already NM
@@ -357,7 +357,7 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
     }
 
     // PLACEHOLDER: reads RadarTrack.pos/altitude. The tracker rewrite will replace this with truth / measurement / estimate.
-    const auto& detectionData = registry.ctx().get<RadarDetectionData>();
+    /* const auto& detectionData = registry.ctx().get<RadarDetectionData>();
     for (const auto& [observerEntity, targetList] : detectionData.activeTracks) {
         if (!registry.valid(observerEntity)) continue;
         const auto& obsTf = registry.get<Transform2D>(observerEntity);
@@ -368,7 +368,7 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
             DrawSphereWires(tp, markerR * 1.6f, 6, 6, tc);
             DrawLine3D(tp, ToRender(trk.pos, map.GetElevation(trk.pos)), Fade(tc, 0.25f));   // altitude stalk
         }
-    }
+    } */
 
     EndMode3D();
 

@@ -32,7 +32,7 @@ namespace {
             dynamicPk *= 0.95;
         }
 
-        if (tSig.rcs < 1.0f) {
+        if (tSig.rcsM2 < 1.0f) {
             dynamicPk *= 0.7f; // Small RCS degrades seeker lock
         }
 

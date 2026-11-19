@@ -70,7 +70,7 @@ void AegisEngine::SpawnScenarioUnits() {
                 }
             }
 
-            float mastHeight = stats.radarMastHeight > 1.0f ? stats.radarMastHeight : 30.0f;
+            float mastHeight = stats.radarMastHeightMeters > 1.0f ? stats.radarMastHeightMeters : 30.0f;
 
             float weaponLimitedStandoff = maxWeaponRangeNM * 0.95f;
 
@@ -133,17 +133,20 @@ void AegisEngine::SpawnScenarioUnits() {
                     0.0f                                          // Weapon Firing Cooldown
                 );
 
-                registry.emplace<RadarEmitter>(entity,
-                    stats.radarRangeNM,                           // Range (Nautical Miles)
-                    stats.radarRangeNM * stats.radarRangeNM,      // Physics Cache (NM Squared)
-                    stats.radarScanRateSec,                       // Scan Rate(Seconds)
-                    randomStartTimer                           // Time Since Last Scan (Randomized when initialized)
-                );
+                registry.emplace<RadarEmitter>(entity,RadarEmitter {
+                    .maxRangeNM = stats.radarRangeNM,
+                    .maxRangeNmSq = stats.radarRangeNM * stats.radarRangeNM,
+                    .scanRateSec = stats.radarScanRateSec,
+                    .timeSinceLastScan = randomStartTimer,
+                    .rangeErrorNM = stats.radarRangeErrorNM,
+                    .angleErrorRadians = stats.radarAngleErrorRadians,
+                    .velocityErrorKnots = stats.radarVelocityErrorKnots
+                });
 
-                registry.emplace<RadarSignature>(entity,
-                    stats.rcs,                                    // Radar Cross-Section (sqm)
-                    stats.rcsFourthRoot                           // RCS Fourth Root
-                    );
+                registry.emplace<RadarSignature>(entity, RadarSignature {
+                    .rcsM2 = stats.rcsM2,
+                    .rcsFourthRoot = stats.rcsFourthRoot
+                });
 
                 registry.emplace<IFF>(entity,
                     group.isHostile                               // Friendly / Hostile

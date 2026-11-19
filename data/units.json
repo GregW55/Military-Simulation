@@ -138,7 +138,12 @@
     "TEMPLATE": {
       "name": "",
       "radar_range_nm": 0.0,
-      "radar_scan_rate_sec": 2.0,
+      "radar_scan_rate_sec": 0.0,
+
+      "radar_range_error_nm": 0.0,
+      "radar_angle_error_rad": 0.0,
+      "radar_velocity_error_kts": 0.0,
+
       "max_speed_kts": 0.0,
       "mast_height_m": 0.0,
       "default_color": "",
@@ -149,6 +154,11 @@
       "name": "Arleigh Burke",
       "radar_range_nm": 250.0,
       "radar_scan_rate_sec": 0.5,
+
+      "radar_range_error_nm": 0.01,
+      "radar_angle_error_rad": 0.001,
+      "radar_velocity_error_kts": 5.0,
+
       "max_speed_kts": 30.0,
       "mast_height_m": 35.0,
       "default_color": "BLUE",
@@ -163,6 +173,11 @@
       "name": "Type 055",
       "radar_range_nm": 250.0,
       "radar_scan_rate_sec": 0.5,
+
+      "radar_range_error_nm": 0.01,
+      "radar_angle_error_rad": 0.001,
+      "radar_velocity_error_kts": 5.0,
+
       "max_speed_kts": 32.0,
       "mast_height_m": 38.0,
       "default_color": "RED",
@@ -176,6 +191,11 @@
       "name": "Nimitz Class",
       "radar_range_nm": 300.0,
       "radar_scan_rate_sec": 4.0,
+
+      "radar_range_error_nm": 0.01,
+      "radar_angle_error_rad": 0.001,
+      "radar_velocity_error_kts": 5.0,
+
       "max_speed_kts": 30.0,
       "mast_height_m": 55.0,
       "default_color": "BLUE",
@@ -188,6 +208,11 @@
       "name": "ROCN Kee Lung",
       "radar_range_nm": 220.0,
       "radar_scan_rate_sec": 4.0,
+
+      "radar_range_error_nm": 0.01,
+      "radar_angle_error_rad": 0.001,
+      "radar_velocity_error_kts": 5.0,
+
       "max_speed_kts": 33.0,
       "mast_height_m": 35.0,
       "default_color": "BLUE",
@@ -200,6 +225,11 @@
       "name": "ROCN Cheng Kung",
       "radar_range_nm": 150.0,
       "radar_scan_rate_sec": 5.0,
+
+      "radar_range_error_nm": 0.01,
+      "radar_angle_error_rad": 0.001,
+      "radar_velocity_error_kts": 5.0,
+
       "max_speed_kts": 29.0,
       "mast_height_m": 28.0,
       "default_color": "BLUE",

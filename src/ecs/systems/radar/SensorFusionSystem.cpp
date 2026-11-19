@@ -1,5 +1,6 @@
 #include "../../Systems.h"
 #include "../../../utils/TrackCorrelation.h"
+#include "../../../utils/KalmanFilter3D.h"
 
 namespace {
 
@@ -20,6 +21,7 @@ namespace {
         const bool firstReport = globalTrack.track.isMissing;
 
         globalTrack.track.latestPing = localTrack.latestPing;
+        globalTrack.track.kalman = localTrack.kalman;
         globalTrack.track.pos = localTrack.pos;
         globalTrack.track.vel = localTrack.vel;
         globalTrack.track.altitude = localTrack.altitude;
@@ -88,7 +90,7 @@ namespace {
             candidates.end(),
             [](const TrackCorrelation::Candidate& a,
                 const TrackCorrelation::Candidate& b) {
-                    return a.distSq < b.distSq;
+                    return a.score < b.score;
             });
 
         return globalTracks[best->targetIndex]->track.globalTrackId;
@@ -102,13 +104,22 @@ void Systems::SensorFusionSystem(
     auto& masterTable = registry.ctx().get<MasterTrackTable>();
     auto& detectionData = registry.ctx().get<RadarDetectionData>();
 
-    // Age existing global tracks
-    for (auto& [id, globalTrack] : masterTable.activeGlobalTracks) {
-        globalTrack.track.ageSec += deltaTime;
-        globalTrack.track.isMissing = true;  // Cleared by UpdateMasterTrack if a live local track reports it
-        if (globalTrack.track.hasVelocity) {
-            globalTrack.track.pos = MathUtils::ExtrapolatePosition(
-                globalTrack.track.latestPing, globalTrack.track.vel, globalTrack.track.ageSec);
+    // Predict existing global tracks using their own filter state.
+    for (auto& [id, globalTrack] : masterTable.activeGlobalTracks)
+    {
+        RadarTrack& track = globalTrack.track;
+
+        track.ageSec += deltaTime;
+        track.isMissing = true;
+
+        if (track.kalman.initialized)
+        {
+            KalmanFilter3D::Predict(
+                track.kalman,
+                deltaTime
+            );
+
+            KalmanFilter3D::CopyToTrack(track);
         }
     }
 

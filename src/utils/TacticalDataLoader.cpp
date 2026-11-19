@@ -58,8 +58,8 @@ void TacticalDataLoader::Load(const std::string &filepath) {
 
         m.seekerRangeNM = LoadFloat(val, "seeker_range_nm", 0.0f, key);
         m.isInterceptor = val.value("is_interceptor", false); // Booleans can still use soft-loading
-        m.rcs = LoadFloat(val, "rcs_sqm", 0.01f, key);
-        m.rcsFourthRoot = std::pow(m.rcs, 0.25f);
+        m.rcsM2 = LoadFloat(val, "rcs_sqm", 0.01f, key);
+        m.rcsFourthRoot = std::pow(m.rcsM2, 0.25f);
         m.cruiseAltitudeMeters = LoadFloat(val, "cruise_altitude_m", 0.0f, key);
 
         // Physics
@@ -83,10 +83,15 @@ void TacticalDataLoader::Load(const std::string &filepath) {
         s.className = val.value("name", "MISSING_NAME");
         s.radarRangeNM = val.value("radar_range_nm", 0.0f);
         s.radarScanRateSec = val.value("radar_scan_rate_sec", 2.0f);
+
+        s.radarRangeErrorNM = val.value("radar_range_error_nm", 0.01f);
+        s.radarAngleErrorRadians = val.value("radar_angle_error_radians", 0.001f);
+        s.radarVelocityErrorKnots = val.value("radar_velocity_error_knots", 5.0f);
+
         s.maxSpeedKnots = val.value("max_speed_kts", 0.0f);
-        s.radarMastHeight = val.value("mast_height_m", 0.0f);
-        s.rcs = val.value("rcs_sqm", 0.0f);
-        s.rcsFourthRoot = std::pow(s.rcs, 0.25f);
+        s.radarMastHeightMeters = val.value("mast_height_m", 0.0f);
+        s.rcsM2 = val.value("rcs_sqm", 0.0f);
+        s.rcsFourthRoot = std::pow(s.rcsM2, 0.25f);
 
         // Parse the dynamic loadout dictionary
         if (val.contains("loadout")) {

@@ -25,7 +25,7 @@ struct MissileStats {
     SeekerType seekerType;
     float seekerRangeNM;
     bool isInterceptor;
-    float rcs;
+    float rcsM2;
     float rcsFourthRoot;
     float cruiseAltitudeMeters;
 
@@ -43,12 +43,19 @@ struct MissileStats {
 
 struct ShipStats {
     std::string className;
+
     float radarRangeNM;
     float radarScanRateSec;
+
+    float radarRangeErrorNM;
+    float radarAngleErrorRadians;
+    float radarVelocityErrorKnots;
+
     float maxSpeedKnots;
-    float radarMastHeight;
-    float rcs;
+    float radarMastHeightMeters;
+    float rcsM2;
     float rcsFourthRoot;
+
     std::unordered_map<std::string, int> loadout; // <Weapon_ID, Count>
 };
 

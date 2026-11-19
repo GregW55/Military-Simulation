@@ -238,9 +238,20 @@ TEST_F(SensorFusionSystemTests, GlobalTrackPositionIsPredicted)
     const MathUtils::Vec2 velocity =
             radar_test::VelocityFromKnots(1000.0f);
 
-    Master().activeGlobalTracks.emplace(
-        id,
-        MakeGlobalTrack(id, ThreatClass::UNKNOWN, DefaultPos, velocity));
+    auto globalTrack = MakeGlobalTrack(
+        id, ThreatClass::UNKNOWN, DefaultPos, velocity);
+
+    // A live global track owns a Kalman state. Give this fixture the same
+    // constant-velocity state so the test exercises the EKF prediction path.
+    globalTrack.track.kalman.initialized = true;
+    globalTrack.track.kalman.x = {
+        DefaultPos.x, DefaultPos.y, globalTrack.track.altitude / METERS_PER_NM,
+        velocity.x, velocity.y, 0.0f
+    };
+    for (int axis = 0; axis < 6; ++axis)
+        globalTrack.track.kalman.P[axis * 6 + axis] = 0.01f;
+
+    Master().activeGlobalTracks.emplace(id, globalTrack);
 
     Systems::SensorFusionSystem(registry, 0.5f);
 

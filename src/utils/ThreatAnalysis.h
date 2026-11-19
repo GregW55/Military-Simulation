@@ -3,14 +3,25 @@
 #include "MathUtils.h"
 
 namespace ThreatAnalysis {
-    inline ThreatClass Classify(float speedKnots, float altitude) {
-        if (speedKnots >= MAX_SHIP_SPEED_KTS || altitude > MAX_SHIP_ALTITUDE_M) {
+    inline ThreatClass Classify(float speedKnots, float speedSigmaKnots,
+                            float altitudeM, float altSigmaM) {
+        if (speedKnots - 3.0f * speedSigmaKnots >= MAX_SHIP_SPEED_KTS ||
+            altitudeM  - 3.0f * altSigmaM       >  MAX_SHIP_ALTITUDE_M)
             return ThreatClass::MISSILE_INBOUND;
-        }
-        if (speedKnots <= MAX_SHIP_SPEED_KTS) {
+
+        if (speedKnots + 3.0f * speedSigmaKnots <= MAX_SHIP_SPEED_KTS)
             return ThreatClass::SURFACE_SHIP;
-        }
+
         return ThreatClass::UNKNOWN;
+    }
+
+    inline float ProcessNoisePSD(ThreatClass c) {
+        switch (c) {
+            case ThreatClass::SURFACE_SHIP:    return KALMAN_PSD_SHIP;
+            case ThreatClass::MISSILE_INBOUND:
+            case ThreatClass::AIRCRAFT:        return KALMAN_PSD_MISSILE;
+            default:                           return KALMAN_PSD_UNKNOWN;
+        }
     }
 
     inline float ComputeThreatScore(const RadarTrack& track) {
