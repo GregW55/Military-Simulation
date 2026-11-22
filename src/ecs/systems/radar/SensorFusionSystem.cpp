@@ -2,8 +2,12 @@
 #include "../../../utils/TrackCorrelation.h"
 #include "../../../utils/KalmanFilter3D.h"
 
-namespace {
+#include <algorithm>
+#include <unordered_set>
+#include <vector>
 
+namespace
+ {
     bool IsStillSameObject(const RadarTrack& local, const RadarTrack& global)
     {
         return !(local.classification  != ThreatClass::UNKNOWN &&
@@ -34,14 +38,28 @@ namespace {
             globalTrack.track.timeToImpactSec = localTrack.timeToImpactSec;
             globalTrack.track.threatScore = localTrack.threatScore;
         }
-        else {
-            // Another observer already reported this frame: keep the lowest known TTI, highest threat
-            float &g = globalTrack.track.timeToImpactSec;
-            const float l = localTrack.timeToImpactSec;
+        else
+        {
+            // Another observer already reported this frame.
+            // Keep the lowest known TTI and highest threat score.
 
-            if (l >= 0.0f && (g < 0.0f || l < g)) g = l;
+            float& globalTTI =
+                globalTrack.track.timeToImpactSec;
 
-            globalTrack.track.threatScore = std::max(globalTrack.track.threatScore, localTrack.threatScore);
+            const float localTTI =
+                localTrack.timeToImpactSec;
+
+            if (localTTI >= 0.0f &&
+                (globalTTI < 0.0f || localTTI < globalTTI))
+            {
+                globalTTI = localTTI;
+            }
+
+            globalTrack.track.threatScore =
+                std::max(
+                    globalTrack.track.threatScore,
+                    localTrack.threatScore
+                );
         }
 
         globalTrack.track.consistentObservationSec = localTrack.consistentObservationSec;
@@ -49,7 +67,7 @@ namespace {
     }
 
     void CreateNewMasterTrack(
-        MasterTrackTable& masterTable,
+        MasterTrackTable::SideTable& side,
         const RadarTrack& localTrack,
         uint32_t newId)
     {
@@ -57,19 +75,19 @@ namespace {
         globalTrack.track = localTrack;     // Initialize globalTrack with localTrack's parameters
         globalTrack.confidence = 1.0f;      // Confidence
 
-        masterTable.activeGlobalTracks.emplace(newId, globalTrack);
+        side.activeGlobalTracks.emplace(newId, globalTrack);
     }
 
     uint32_t CorrelateLocalToMaster(
-        const MasterTrackTable& masterTable,
+        const MasterTrackTable::SideTable& side,
         const RadarTrack& localTrack,
         const std::unordered_set<uint32_t>& claimedByThisObserver)
     {
         // Build a list of pointers so the helper can work with the unordered_map without copying the global tracks
         std::vector<const MasterTrackTable::GlobalTrack*> globalTracks;
-        globalTracks.reserve(masterTable.activeGlobalTracks.size());
+        globalTracks.reserve(side.activeGlobalTracks.size());
 
-        for (const auto& [id, globalTrack] : masterTable.activeGlobalTracks) {
+        for (const auto& [id, globalTrack] : side.activeGlobalTracks) {
             if (claimedByThisObserver.contains(id)) continue;
             globalTracks.push_back(&globalTrack);
         }
@@ -82,7 +100,7 @@ namespace {
             globalTracks, // Targets
             TrackCorrelation::SourceKind::TRACK);
 
-        if (candidates.empty()) return 0;
+        if (candidates.empty()) return NO_GLOBAL_TRACK;
 
         // Choose the nearest candidate, not the first unordered_map entry.
         const auto best = std::min_element(
@@ -105,30 +123,52 @@ void Systems::SensorFusionSystem(
     auto& detectionData = registry.ctx().get<RadarDetectionData>();
 
     // Predict existing global tracks using their own filter state.
-    for (auto& [id, globalTrack] : masterTable.activeGlobalTracks)
-    {
-        RadarTrack& track = globalTrack.track;
-
-        track.ageSec += deltaTime;
-        track.isMissing = true;
-
-        if (track.kalman.initialized)
+    for (auto& side : masterTable.sides) {
+        for (auto& [id, globalTrack] : side.activeGlobalTracks)
         {
-            KalmanFilter3D::Predict(
-                track.kalman,
-                deltaTime
-            );
+            RadarTrack& track = globalTrack.track;
 
-            KalmanFilter3D::CopyToTrack(track);
+            track.ageSec += deltaTime;
+            track.isMissing = true;
+
+            if (track.kalman.initialized)
+            {
+                KalmanFilter3D::Predict(
+                    track.kalman,
+                    deltaTime
+                );
+
+                KalmanFilter3D::CopyToTrack(track);
+            }
         }
     }
 
     for (auto& [observer, tracks] : detectionData.activeTracks) {
+        // Ignore destroyed observers
+        if (!registry.valid(observer))
+            continue;
 
-        // Every global ID this observer's local tracks already hold
+        // Determine which side owns this observer
+        const auto* observerIFF = registry.try_get<IFF>(observer);
+
+        if (!observerIFF)
+            continue;
+        // Select the global track table belonging to this observer
+        // IFF false = Blue
+        // IFF true = Red
+
+        auto& side = masterTable.GetSide(observerIFF->isHostile);
+
         std::unordered_set<uint32_t> claimed;
-        for (const auto& t : tracks) {
-            if (t.globalTrackId != NO_GLOBAL_TRACK) claimed.insert(t.globalTrackId);
+
+        for (const auto& track : tracks) {
+            // Missing local tracks do not reserve a global ID
+            if (track.isMissing) continue;
+
+            if (track.globalTrackId != NO_GLOBAL_TRACK)
+            {
+                claimed.insert(track.globalTrackId);
+            }
         }
 
         for (auto& localTrack : tracks) {
@@ -137,9 +177,9 @@ void Systems::SensorFusionSystem(
 
             // Preserve an existing local-to-global association
             if (localTrack.globalTrackId != NO_GLOBAL_TRACK) {
-                auto it = masterTable.activeGlobalTracks.find(localTrack.globalTrackId);
+                auto it = side.activeGlobalTracks.find(localTrack.globalTrackId);
 
-                if (it != masterTable.activeGlobalTracks.end()) {
+                if (it != side.activeGlobalTracks.end()) {
                     if (IsStillSameObject(localTrack, it->second.track)) {
                         UpdateMasterTrack(it->second, localTrack);
                         continue;
@@ -147,30 +187,36 @@ void Systems::SensorFusionSystem(
                     claimed.erase(localTrack.globalTrackId);
                     localTrack.globalTrackId = NO_GLOBAL_TRACK;
                 }
+                else {
+                    // The global track no longer exists.
+                    localTrack.globalTrackId = NO_GLOBAL_TRACK;
+                }
             }
-            
-            // No valid existing association: try correlating by position.
-            const uint32_t matchedGlobalTrackId = CorrelateLocalToMaster(masterTable, localTrack, claimed);
 
-            auto it = masterTable.activeGlobalTracks.find(matchedGlobalTrackId);
+            const uint32_t matchedGlobalTrackId = CorrelateLocalToMaster(side, localTrack, claimed);
 
-            if (it != masterTable.activeGlobalTracks.end()) {
+            auto it = side.activeGlobalTracks.find(matchedGlobalTrackId);
+
+            if (it != side.activeGlobalTracks.end()) {
                 UpdateMasterTrack(it->second, localTrack);
                 localTrack.globalTrackId = matchedGlobalTrackId;
             }
             else {
                 // No match: create a new global track.
-                const uint32_t newId = masterTable.AllocateTrackId();
+                const uint32_t newId = side.AllocateTrackId();
+
                 localTrack.globalTrackId = newId;
-                CreateNewMasterTrack(masterTable, localTrack, newId);
+                CreateNewMasterTrack(side, localTrack, newId);
             }
 
             claimed.insert(localTrack.globalTrackId); // This ID is now taken
         }
     }
 
-    // Drop global tracks that no observer has refreshed within the timeout limit
-    std::erase_if(masterTable.activeGlobalTracks, [] (const auto& entry) {
-        return entry.second.track.ageSec > TRACK_DELETION_TIMEOUT_SEC;
-    });
+    for (auto& side : masterTable.sides) {
+        // Drop global tracks that no observer has refreshed within the timeout limit
+        std::erase_if(side.activeGlobalTracks, [] (const auto& entry) {
+            return entry.second.track.ageSec > TRACK_DELETION_TIMEOUT_SEC;
+        });
+    }
 }

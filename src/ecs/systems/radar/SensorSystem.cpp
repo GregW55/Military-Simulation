@@ -10,13 +10,6 @@
 
 namespace
 {
-    // =========================
-    // === Radar scan timing ===
-    // =========================
-    bool ShouldBeginRadarScan(const RadarEmitter& radar) {
-        return radar.timeSinceLastScan >= radar.scanRateSec;
-    }
-
     // ======================
     // === Radar scanning ===
     // ======================
@@ -47,7 +40,7 @@ namespace
 
         // Fast horizontal range check.
         const float effectiveRangeNM = obsRadar.maxRangeNM * targetRadarSignature.rcsFourthRoot;
-        if (horizontalRangeSq > effectiveRangeNM * effectiveRangeNM) 
+        if (horizontalRangeSq > effectiveRangeNM * effectiveRangeNM)
             return std::nullopt;
 
         const float horizontalRangeNM = std::sqrt(horizontalRangeSq);
@@ -134,15 +127,15 @@ namespace
         const float angleError = std::max(0.0f, obsRadar.angleErrorRadians);
         const float velocityError = std::max(0.0f, obsRadar.velocityErrorKnots);
 
-        std::normal_distribution<float> rangeNoise(
+        std::normal_distribution rangeNoise(
             0.0f, rangeError > 0.0f ? rangeError : 1.0f
         );
 
-        std::normal_distribution<float> angleNoise(
+        std::normal_distribution angleNoise(
             0.0f, angleError > 0.0f ? angleError : 1.0f
         );
 
-        std::normal_distribution<float> velocityNoise(
+        std::normal_distribution velocityNoise(
             0.0f, velocityError > 0.0f ? velocityError : 1.0f
         );
 
@@ -202,7 +195,7 @@ void Systems::SensorSystem(entt::registry& registry, const float deltaTime)
     {
         obsRadar.timeSinceLastScan += deltaTime;
 
-        if (!ShouldBeginRadarScan(obsRadar)) return;
+        if (obsRadar.timeSinceLastScan < obsRadar.scanRateSec) return;
 
         obsRadar.timeSinceLastScan -= obsRadar.scanRateSec;
 

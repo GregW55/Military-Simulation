@@ -198,7 +198,8 @@ namespace {
         const Transform2D& transform,
         const Magazine& mag,
         const EngagementLog& log,
-        const RadarTrack& threat)
+        const RadarTrack& threat,
+        const IFF& iff)
     {
         EngagementEvaluationResult result;
 
@@ -256,7 +257,7 @@ namespace {
         // --- Datalink check to see if we're already targeting this ---
         // Todo: Needs more nuance... a missile inbound in 20 minutes does not require multiple ships to fire at it
         auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
-        if (threat.classification != ThreatClass::MISSILE_INBOUND && sharedPicture.IsAssigned(threat.globalTrackId)) {
+        if (threat.classification != ThreatClass::MISSILE_INBOUND && sharedPicture.IsAssigned(iff.isHostile, threat.globalTrackId)) {
             result.status = EngagementStatus::TargetAlreadyAssigned;
             return result;
         }
@@ -274,12 +275,12 @@ namespace {
         EngagementLog& log,
         const RadarTrack& threat)
     {
-        EngagementEvaluationResult eval = EvaluateEngagement(registry, transform, mag, log, threat);
+        EngagementEvaluationResult eval = EvaluateEngagement(registry, transform, mag, log, threat, iff);
 
         if (eval.status != EngagementStatus::ReadyToEngage) return false;
 
         auto& sharedPicture = registry.ctx().get<SharedThreatPicture>();
-        sharedPicture.Assign(threat.globalTrackId, entity);
+        sharedPicture.Assign(iff.isHostile, threat.globalTrackId, entity);
 
         int salvoCount = DetermineSalvoSize(threat);
         FireSalvo(registry, entity, transform, registry.get<Kinematics>(entity),

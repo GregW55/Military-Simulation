@@ -150,19 +150,42 @@ struct RadarTrack {
     float measurementSigmaNM = 0.0f;                    // 1-sigma horizontal error of a ping-derived observation
 };
 
-struct SharedThreatPicture {
-    // Maps Global Track ID -> Shooter Entity assigned to engage it
-    std::unordered_map<uint32_t, entt::entity> trackAssignments;
+struct SharedThreatPicture
+{
+    using AssignmentMap =
+        std::unordered_map<uint32_t, entt::entity>;
 
-    bool IsAssigned(uint32_t systemTrackId) const {
-        return trackAssignments.find(systemTrackId) != trackAssignments.end();
+    std::array<AssignmentMap, 2> trackAssignments;
+
+    bool IsAssigned(
+        bool isHostile,
+        uint32_t globalTrackId) const
+    {
+        const size_t side =
+            isHostile ? 1u : 0u;
+
+        return trackAssignments[side].contains(
+            globalTrackId
+        );
     }
 
-    void Assign(uint32_t systemTrackId, entt::entity shooter) {
-        trackAssignments[systemTrackId] = shooter;
+    void Assign(
+        bool isHostile,
+        uint32_t globalTrackId,
+        entt::entity shooter)
+    {
+        const size_t side =
+            isHostile ? 1u : 0u;
+
+        trackAssignments[side][globalTrackId] =
+            shooter;
     }
 
-    void Clear() { trackAssignments.clear(); }
+    void Clear()
+    {
+        for (auto& assignments : trackAssignments)
+            assignments.clear();
+    }
 };
 
 struct RadarDetectionData {
@@ -173,23 +196,57 @@ struct RadarDetectionData {
     std::unordered_map<entt::entity, std::vector<RadarMeasurement>> frameMeasurements;
 };
 
-struct MasterTrackTable {
-    uint32_t nextGlobalTrackId = 1000;
-
-    // Global master list of fused tracks available to the entire task force datalink
-    struct GlobalTrack {
+struct MasterTrackTable
+{
+    struct GlobalTrack
+    {
         RadarTrack track;
         float confidence = 1.0f;
     };
 
-    std::unordered_map<uint32_t, GlobalTrack> activeGlobalTracks;
+    struct SideTable
+    {
+        std::unordered_map<uint32_t, GlobalTrack>
+            activeGlobalTracks;
 
-    uint32_t AllocateTrackId() {
-        return nextGlobalTrackId++;
+        // Each side starts its own ID sequence.
+        uint32_t nextGlobalTrackId = 1001;
+
+        uint32_t AllocateTrackId()
+        {
+            return nextGlobalTrackId++;
+        }
+
+        void Clear()
+        {
+            activeGlobalTracks.clear();
+            nextGlobalTrackId = 1001;
+        }
+    };
+
+    // Index 0 = IFF::isHostile false (Blue)
+    // Index 1 = IFF::isHostile true  (Red)
+    std::array<SideTable, 2> sides;
+
+    static size_t GetSideIndex(bool isHostile)
+    {
+        return isHostile ? 1u : 0u;
     }
 
-    void Clear() {
-        activeGlobalTracks.clear();
+    SideTable& GetSide(bool isHostile)
+    {
+        return sides[GetSideIndex(isHostile)];
+    }
+
+    const SideTable& GetSide(bool isHostile) const
+    {
+        return sides[GetSideIndex(isHostile)];
+    }
+
+    void Clear()
+    {
+        for (auto& side : sides)
+            side.Clear();
     }
 };
 
