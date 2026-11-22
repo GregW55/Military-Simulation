@@ -80,6 +80,10 @@ constexpr float MAX_TTI_FOR_SECOND_SHOT_SEC = 30.0f;
 constexpr uint8_t MAX_SHOTS_PER_THREAT = 2;
 constexpr float MIN_AMMO_RESERVE_RATIO = 0.15f;                         // ~15% max ammo reserved for incoming missiles
 
+// Initial four-degree-of-freedom chi-square threshold at approximately 99% confidence.
+// It is not a physical distance in nautical miles. It is a normalized statistical difference between a measurement and a predicted measurement.
+constexpr float RADAR_ASSOCIATION_GATE_4DOF = 13.2767f;
+
 // ==========================================
 // 5. DATALINK & NETWORKING
 // ==========================================

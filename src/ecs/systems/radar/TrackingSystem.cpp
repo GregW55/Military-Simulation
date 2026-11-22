@@ -15,12 +15,192 @@ namespace {
         size_t track;
     };
 
+    struct AssociationCandidate {
+        float score;
+        size_t ping;
+        size_t track;
+    };
+
     struct AssignmentResult {
         std::vector<MatchPair> matchedPairs;
         std::vector<char> pingUsed;
         std::vector<char> trackUsed;
-        size_t originalTrackCount;
     };
+
+    constexpr size_t TRACK_CONFIRM_WINDOW = 5;
+    constexpr size_t TRACK_CONFIRM_HITS = 3;
+
+    void RecordScanResult(
+    RadarTrack& track,
+    bool hit)
+    {
+        track.recentScanHits[track.scanHistoryNext] =
+            hit ? 1 : 0;
+
+        track.scanHistoryNext =
+            static_cast<uint8_t>(
+                (track.scanHistoryNext + 1) %
+                TRACK_CONFIRM_WINDOW
+            );
+
+        if (track.scanHistoryCount < TRACK_CONFIRM_WINDOW)
+            ++track.scanHistoryCount;
+
+        if (hit)
+        {
+            track.missedScanCount = 0;
+            track.isMissing = false;
+
+            // A previously confirmed track resumes confirmation
+            // immediately after a successful reacquisition.
+            if (track.lifecycle == TrackLifecycle::COASTING)
+            {
+                track.lifecycle = TrackLifecycle::CONFIRMED;
+                return;
+            }
+
+            size_t hitCount = 0;
+
+            for (size_t i = 0; i < track.scanHistoryCount; ++i)
+            {
+                if (track.recentScanHits[i])
+                    ++hitCount;
+            }
+
+            if (track.lifecycle == TrackLifecycle::TENTATIVE &&
+                hitCount >= TRACK_CONFIRM_HITS)
+            {
+                track.lifecycle = TrackLifecycle::CONFIRMED;
+            }
+        }
+        else
+        {
+            track.isMissing = true;
+
+            if (track.missedScanCount <
+                std::numeric_limits<uint8_t>::max())
+            {
+                ++track.missedScanCount;
+            }
+
+            if (track.lifecycle == TrackLifecycle::CONFIRMED)
+                track.lifecycle = TrackLifecycle::COASTING;
+        }
+    }
+
+    std::vector<int> SolveHungarian(
+        const std::vector<std::vector<double>>& cost)
+    {
+        const size_t n = cost.size();
+
+        if (n == 0)
+            return {};
+
+        for (const auto& row : cost)
+        {
+            if (row.size() != n)
+                return {};
+        }
+
+        std::vector u(n + 1, 0.0);
+        std::vector v(n + 1, 0.0);
+
+        std::vector<size_t> p(n + 1, 0);
+        std::vector<size_t> way(n + 1, 0);
+
+        for (size_t i = 1; i <= n; ++i)
+        {
+            p[0] = i;
+
+            size_t j0 = 0;
+
+            std::vector<double> minv(
+                n + 1,
+                std::numeric_limits<double>::infinity()
+            );
+
+            std::vector<char> used(n + 1, false);
+
+            do
+            {
+                used[j0] = true;
+
+                const size_t i0 = p[j0];
+
+                double delta =
+                    std::numeric_limits<double>::infinity();
+
+                size_t j1 = 0;
+
+                for (size_t j = 1; j <= n; ++j)
+                {
+                    if (used[j])
+                        continue;
+
+                    const double current =
+                        cost[i0 - 1][j - 1] -
+                        u[i0] -
+                        v[j];
+
+                    if (current < minv[j])
+                    {
+                        minv[j] = current;
+                        way[j] = j0;
+                    }
+
+                    if (minv[j] < delta)
+                    {
+                        delta = minv[j];
+                        j1 = j;
+                    }
+                }
+
+                if (!std::isfinite(delta))
+                    return {};
+
+                for (size_t j = 0; j <= n; ++j)
+                {
+                    if (used[j])
+                    {
+                        u[p[j]] += delta;
+                        v[j] -= delta;
+                    }
+                    else
+                    {
+                        minv[j] -= delta;
+                    }
+                }
+
+                j0 = j1;
+
+            } while (p[j0] != 0);
+
+            // Augment the assignment.
+            do
+            {
+                const size_t j1 = way[j0];
+
+                p[j0] = p[j1];
+
+                j0 = j1;
+
+            } while (j0 != 0);
+        }
+
+        // Result: row -> assigned column.
+        std::vector<int> assignment(n, -1);
+
+        for (size_t j = 1; j <= n; ++j)
+        {
+            if (p[j] != 0)
+            {
+                assignment[p[j] - 1] =
+                    static_cast<int>(j - 1);
+            }
+        }
+
+        return assignment;
+    }
 
     // =======================================
     // === Track aging and timeout removal ===
@@ -67,8 +247,7 @@ namespace {
 
     RadarTrack MeasurementToObservation(
         const RadarMeasurement& measurement,
-        const Transform2D& observerTransform,
-        const RadarEmitter& radar)
+        const Transform2D& observerTransform)
     {
         RadarTrack observation;
 
@@ -93,9 +272,6 @@ namespace {
             observerTransform.altitude +
             verticalRangeNM * 1852.0f;
 
-        const float crossRangeNM = measurement.rangeNM * radar.angleErrorRadians;
-        observation.measurementSigmaNM = std::sqrt(
-            radar.rangeErrorNM * radar.rangeErrorNM + crossRangeNM * crossRangeNM);
 
         return observation;
     }
@@ -103,234 +279,312 @@ namespace {
     // =============================
     // === Existing track update ===
     // =============================
-    void UpdateExistingTrack(
-    RadarTrack& track,
-    const RadarMeasurement& measurement,
-    const RadarTrack& observation,
-    const Transform2D& observerTransform,
-    const Kinematics& observerKinematics,
-    const RadarEmitter& radar)
-{
-    const float timeElapsed = track.ageSec;
-
-    // Correct the predicted six-state estimate using the original
-    // polar radar measurement, not the reconstructed Cartesian ping.
-    const bool corrected = KalmanFilter3D::Correct(
-        track.kalman,
-        measurement,
-        observerTransform,
-        observerKinematics,
-        radar
-    );
-
-    if (!corrected)
-        return;
-
-    // The EKF is now the source of truth for position and velocity.
-    KalmanFilter3D::CopyToTrack(track);
-
-    // Keep the last actual observed position separate from the
-    // filter's estimated/predicted position.
-    track.latestPing = observation.pos;
-
-    track.ageSec = 0.0f;
-    track.isMissing = false;
-
-    float closingSpeedKnots = 0.0f;
-    float timeToImpact = -1.0f;
-
-    const float distance =
-        MathUtils::GetDistance(
-            observerTransform.pos,
-            track.pos
-        );
-
-    if (distance > 0.001f && track.hasVelocity)
+    bool UpdateExistingTrack(
+        RadarTrack& track,
+        const RadarMeasurement& measurement,
+        const RadarTrack& observation,
+        const Transform2D& observerTransform,
+        const Kinematics& observerKinematics)
     {
-        const float closingSpeedNmPerSec =
-            MathUtils::GetClosingSpeedNmPerSec(
-                track.pos,
-                track.vel,
-                observerTransform.pos
-            );
+        // Elapsed time since the last successful measurement.
+        const float timeElapsed = track.ageSec;
 
-        closingSpeedKnots =
-            MathUtils::NmPerSecToKnots(closingSpeedNmPerSec);
-
-        timeToImpact =
-            ThreatAnalysis::EstimateTimeToImpact(
-                distance,
-                closingSpeedNmPerSec
-            );
-    }
-
-    track.closingSpeedKnots = closingSpeedKnots;
-    track.timeToImpactSec = timeToImpact;
-    track.threatScore =
-        ThreatAnalysis::ComputeThreatScore(track);
-
-    // Preserve your existing classification confirmation logic.
-        if (track.classification == ThreatClass::UNKNOWN)
+        // Correct must use exactly the same innovation calculation that was used by the association gate.
+        if (!KalmanFilter3D::Correct(
+            track.kalman,
+            measurement,
+            observerTransform,
+            observerKinematics))
         {
-            if (track.hasVelocity)
+            return false;
+        }
+
+        // Copy the corrected six-state estimate.
+        KalmanFilter3D::CopyToTrack(track);
+
+        track.latestPing = observation.pos;
+
+        track.ageSec = 0.0f;
+        track.isMissing = false;
+
+        // --------------------------------------------------------
+        // Recalculate observer-relative threat information.
+        // --------------------------------------------------------
+
+        float closingSpeedKnots = 0.0f;
+        float timeToImpact = -1.0f;
+
+        const float distance =
+            MathUtils::GetDistance(
+                observerTransform.pos,
+                track.pos
+            );
+
+        if (distance > 0.001f && track.hasVelocity)
+        {
+            const float closingSpeedNmPerSec =
+                MathUtils::GetClosingSpeedNmPerSec(
+                    track.pos,
+                    track.vel,
+                    observerTransform.pos
+                );
+
+            closingSpeedKnots =
+                MathUtils::NmPerSecToKnots( closingSpeedNmPerSec );
+
+            timeToImpact =
+                ThreatAnalysis::EstimateTimeToImpact(
+                    distance,
+                    closingSpeedNmPerSec
+                );
+        }
+
+        track.closingSpeedKnots = closingSpeedKnots;
+        track.timeToImpactSec = timeToImpact;
+
+        track.threatScore =
+            ThreatAnalysis::ComputeThreatScore(track);
+
+        // --------------------------------------------------------
+        // Classification confirmation.
+        // This remains separate from track confirmation.
+        // --------------------------------------------------------
+
+        if (track.classification == ThreatClass::UNKNOWN &&
+            track.hasVelocity)
+        {
+            const auto& P = track.kalman.P;
+
+            const float speedSigmaKnots =
+                std::sqrt(
+                    std::max(
+                        0.0f,
+                        P[3 * 6 + 3] + P[4 * 6 + 4]
+                    )
+                ) * NM_PER_SEC_TO_KNOTS;
+
+            const float altitudeSigmaMeters =
+                std::sqrt(
+                    std::max(0.0f, P[2 * 6 + 2])
+                ) * METERS_PER_NM;
+
+            const ThreatClass observed =
+                ThreatAnalysis::Classify(
+                    track.speedKnots,
+                    speedSigmaKnots,
+                    track.altitude,
+                    altitudeSigmaMeters
+                );
+
+            if (observed == ThreatClass::UNKNOWN)
             {
-                const auto& P = track.kalman.P;
-                const float speedSigmaKnots =
-                    std::sqrt(std::max(0.0f, P[3 * 6 + 3] + P[4 * 6 + 4])) * NM_PER_SEC_TO_KNOTS;
-                const float altSigmaM =
-                    std::sqrt(std::max(0.0f, P[2 * 6 + 2])) * METERS_PER_NM;
+                track.pendingClass = ThreatClass::UNKNOWN;
+                track.pendingSec = 0.0f;
+            }
+            else if (observed == track.pendingClass)
+            {
+                track.pendingSec += timeElapsed;
 
-                const ThreatClass observed = ThreatAnalysis::Classify(
-                    track.speedKnots, speedSigmaKnots, track.altitude, altSigmaM);
+                if (track.pendingSec >= CLASSIFICATION_CONFIRM_SEC)
+                {
+                    track.classification = observed;
 
-                if (observed == ThreatClass::UNKNOWN) {
-                    track.pendingClass = ThreatClass::UNKNOWN;
-                    track.pendingSec = 0.0f;
-                }
-                else if (observed == track.pendingClass) {
-                    track.pendingSec += timeElapsed;
-                    if (track.pendingSec >= CLASSIFICATION_CONFIRM_SEC) {
-                        track.classification = observed;
-                        track.kalman.processNoiseAccelPSD = ThreatAnalysis::ProcessNoisePSD(observed);
-                        track.consistentObservationSec = 0.0f;
-                        track.pendingSec = 0.0f;
-                    }
-                }
-                else {
-                    track.pendingClass = observed;
+                    track.kalman.processNoiseAccelPSD =
+                        ThreatAnalysis::ProcessNoisePSD(observed);
+
+                    track.consistentObservationSec = 0.0f;
                     track.pendingSec = 0.0f;
                 }
             }
+            else
+            {
+                track.pendingClass = observed;
+                track.pendingSec = 0.0f;
+            }
         }
-        else {
+        else if (track.classification != ThreatClass::UNKNOWN)
+        {
             track.consistentObservationSec += timeElapsed;
         }
-}
+
+        return true;
+    }
 
     // ==========================
     // === New track creation ===
     // ==========================
     RadarTrack CreateNewTrack(
-    const RadarMeasurement& measurement,
-    const RadarTrack& observation,
-    const Transform2D& observerTransform,
-    const Kinematics& observerKinematics,
-    const RadarEmitter& radar)
+     const RadarMeasurement& measurement,
+     const RadarTrack& observation,
+     const Transform2D& observerTransform,
+     const Kinematics& observerKinematics)
     {
-        RadarTrack track;
+        RadarTrack track{};
 
         track.globalTrackId = NO_GLOBAL_TRACK;
 
         track.latestPing = observation.pos;
 
         track.pos = observation.pos;
-        track.vel = {0.0f, 0.0f};
         track.altitude = observation.altitude;
 
+        track.vel = {0.0f, 0.0f};
+        track.verticalVelocityNMPerSec = 0.0f;
+
         track.ageSec = 0.0f;
-        track.hasVelocity = false;
         track.isMissing = false;
+        track.hasVelocity = false;
 
         track.speedKnots = 0.0f;
         track.closingSpeedKnots = 0.0f;
         track.timeToImpactSec = -1.0f;
+        track.threatScore = 0.0f;
+
+        track.lifecycle = TrackLifecycle::TENTATIVE;
 
         track.classification = ThreatClass::UNKNOWN;
-        track.threatScore = 0.0f;
-        track.consistentObservationSec = 0.0f;
-
         track.pendingClass = ThreatClass::UNKNOWN;
+
+        track.consistentObservationSec = 0.0f;
         track.pendingSec = 0.0f;
 
-        // Initialize the EKF from the first actual radar measurement.
         KalmanFilter3D::Initialize(
             track.kalman,
             measurement,
             observerTransform,
-            observerKinematics,
-            radar
+            observerKinematics
         );
 
-        // Copy the initialized filter state into the public track fields.
         KalmanFilter3D::CopyToTrack(track);
+
+        // The measurement that created this track counts as its first hit.
+        RecordScanResult(track, true);
 
         return track;
     }
 
     AssignmentResult ResolveAssignments(
-        const std::vector<RadarTrack>& observerTracks,
-        const std::vector<RadarTrack>& pings,
-        std::vector <TrackCorrelation::Candidate>& candidates)
+        size_t trackCount,
+        size_t pingCount,
+        const std::vector<AssociationCandidate>& candidates)
     {
-        // Closest pairs win; each ping and each track can be used once
-        std::sort(
-            candidates.begin(),
-            candidates.end(),
-            [](const TrackCorrelation::Candidate& a, const TrackCorrelation::Candidate& b) {
-                return a.score < b.score;
-             });
+        AssignmentResult result{};
 
-        std::vector<char> pingUsed(pings.size(), 0);
-        std::vector<char> trackUsed(observerTracks.size(), 0);
-        std::vector<MatchPair> matchedPairs;
+        result.pingUsed.assign(pingCount, false);
+        result.trackUsed.assign(trackCount, false);
 
-        for (const TrackCorrelation::Candidate& c : candidates) {
-            const size_t p = c.sourceIndex;
-            const size_t t = c.targetIndex;
+        if (trackCount == 0 || pingCount == 0)
+            return result;
 
-            if (pingUsed[p] || trackUsed[t]) continue;
+        // We add dummy rows and columns to allow both tracks
+        // and measurements to remain unmatched.
 
-            pingUsed[p] = 1;
-            trackUsed[t] = 1;
+        const size_t n = trackCount + pingCount;
 
-            matchedPairs.push_back({p, t});
-        }
+        constexpr double INVALID_COST = 1e9;
 
-        return {
-            std::move(matchedPairs),
-            std::move(pingUsed),
-            std::move(trackUsed),
-            observerTracks.size()
-            };
-    }
+        const double unassignedCost =
+            RADAR_ASSOCIATION_GATE_4DOF * 0.5;
 
-    void AddNewTracks(
-    std::vector<RadarTrack>& observerTracks,
-    const std::vector<RadarMeasurement>& measurements,
-    const std::vector<RadarTrack>& observations,
-    const std::vector<char>& pingUsed,
-    const Transform2D& observerTransform,
-    const Kinematics& observerKinematics,
-    const RadarEmitter& radar)
-    {
-        for (size_t p = 0; p < measurements.size(); ++p)
+        std::vector<std::vector<double>> cost(
+            n,
+            std::vector<double>(n, INVALID_COST)
+        );
+
+        // --------------------------------------------------------
+        // Real track -> real measurement costs.
+        // --------------------------------------------------------
+
+        for (const auto& candidate : candidates)
         {
-            if (pingUsed[p])
+            if (candidate.track >= trackCount ||
+                candidate.ping >= pingCount)
+            {
                 continue;
+            }
 
-            observerTracks.push_back(
-                CreateNewTrack(
-                    measurements[p],
-                    observations[p],
-                    observerTransform,
-                    observerKinematics,
-                    radar
-                )
-            );
+            cost[candidate.track][candidate.ping] =
+                candidate.score;
         }
-    }
 
-    void ProcessMissingTracks(
-        std::vector<RadarTrack>& observerTracks,
-        const std::vector<char>& trackUsed,
-        size_t originalTrackCount)
-    {
-        // Handle missing tracks - only for tracks that existed on a previous frame but had no matched pair
-        for (auto [t, track] : observerTracks | std::views::take(originalTrackCount) | std::views::enumerate) {
-            if (!trackUsed[t]) {
-                track.isMissing = true;
+        // --------------------------------------------------------
+        // Real track -> dummy measurement.
+        // Means the track was not updated this scan.
+        // --------------------------------------------------------
+
+        for (size_t t = 0; t < trackCount; ++t)
+        {
+            for (size_t dummy = 0; dummy < trackCount; ++dummy)
+            {
+                cost[t][pingCount + dummy] =
+                    unassignedCost;
             }
         }
+
+        // --------------------------------------------------------
+        // Dummy track -> real measurement.
+        // Means the measurement starts a new track.
+        // --------------------------------------------------------
+
+        for (size_t dummy = 0; dummy < pingCount; ++dummy)
+        {
+            const size_t row = trackCount + dummy;
+
+            for (size_t p = 0; p < pingCount; ++p)
+            {
+                cost[row][p] = unassignedCost;
+            }
+        }
+
+        // --------------------------------------------------------
+        // Dummy track -> dummy measurement.
+        // These assignments have zero cost.
+        // --------------------------------------------------------
+
+        for (size_t row = trackCount; row < n; ++row)
+        {
+            for (size_t col = pingCount; col < n; ++col)
+            {
+                cost[row][col] = 0.0;
+            }
+        }
+
+        const std::vector<int> assignment =
+            SolveHungarian(cost);
+
+        if (assignment.size() != n)
+            return result;
+
+        // --------------------------------------------------------
+        // Extract real track / measurement matches.
+        // --------------------------------------------------------
+
+        for (size_t t = 0; t < trackCount; ++t)
+        {
+            const int assignedColumn = assignment[t];
+
+            if (assignedColumn < 0)
+                continue;
+
+            const size_t p =
+                static_cast<size_t>(assignedColumn);
+
+            if (p >= pingCount)
+                continue;
+
+            if (cost[t][p] >
+                RADAR_ASSOCIATION_GATE_4DOF)
+            {
+                continue;
+            }
+
+            result.matchedPairs.push_back({p, t});
+
+            result.pingUsed[p] = true;
+            result.trackUsed[t] = true;
+        }
+
+        return result;
     }
 }
 
@@ -338,33 +592,49 @@ namespace {
 // RADAR SYSTEM
 // ================================================================
 
-void Systems::TrackingSystem(entt::registry& registry, float deltaTime)
+void Systems::TrackingSystem(
+    entt::registry& registry,
+    float deltaTime)
 {
     auto& detectionData =
         registry.ctx().get<RadarDetectionData>();
 
-    // Age tracks and remove expired tracks.
+    // --------------------------------------------------------
+    // 1. Age existing tracks.
+    // --------------------------------------------------------
+
     UpdateTrackAges(
         registry,
         detectionData,
         deltaTime
     );
 
-    // Predict every initialized local track exactly once per update.
+    // --------------------------------------------------------
+    // 2. Predict every existing EKF to the current simulation time.
+    // --------------------------------------------------------
+
     UpdateTrackPredictions(
         detectionData,
         deltaTime
     );
 
-    // Process radar measurements for each observer.
+    // --------------------------------------------------------
+    // 3. Process each observer's completed radar scan.
+    // --------------------------------------------------------
+
     for (const auto& [observer, measurements] :
          detectionData.frameMeasurements)
     {
         if (!registry.valid(observer))
             continue;
 
-        if (!registry.all_of<Transform2D, Kinematics, RadarEmitter>(observer))
+        if (!registry.all_of<
+            Transform2D,
+            Kinematics,
+            RadarEmitter>(observer))
+        {
             continue;
+        }
 
         auto& observerTracks =
             detectionData.activeTracks[observer];
@@ -375,70 +645,149 @@ void Systems::TrackingSystem(entt::registry& registry, float deltaTime)
         const auto& observerKinematics =
             registry.get<Kinematics>(observer);
 
-        const auto& radar =
-            registry.get<RadarEmitter>(observer);
+        const size_t originalTrackCount =
+            observerTracks.size();
 
-        // These reconstructed positions are for association only.
-        // The EKF receives the original RadarMeasurement below.
+        // ----------------------------------------------------
+        // 4. Generate Cartesian positions for logging/display.
+        //    They are NOT used to decide associations.
+        // ----------------------------------------------------
+
         std::vector<RadarTrack> observations;
         observations.reserve(measurements.size());
 
-        for (const RadarMeasurement& measurement : measurements)
+        for (const auto& measurement : measurements)
         {
             observations.push_back(
                 MeasurementToObservation(
                     measurement,
-                    observerTransform,
-                    radar
+                    observerTransform
                 )
             );
         }
 
-        // Find possible measurement-to-track matches.
-        auto candidates =
-            TrackCorrelation::GenerateCandidates(
-                observations,
-                observerTracks,
-                TrackCorrelation::SourceKind::PING
-            );
+        // ----------------------------------------------------
+        // 5. Generate 4D measurement-to-track candidates.
+        // ----------------------------------------------------
 
-        // Resolve one-to-one assignments.
+        std::vector<AssociationCandidate> candidates;
+
+        for (size_t p = 0; p < measurements.size(); ++p)
+        {
+            const RadarMeasurement& measurement =
+                measurements[p];
+
+            for (size_t t = 0; t < originalTrackCount; ++t)
+            {
+                RadarTrack& track = observerTracks[t];
+
+                if (!track.kalman.initialized)
+                    continue;
+
+                RadarInnovation innovation{};
+
+                if (!KalmanFilter3D::CalculateInnovation(
+                    track.kalman,
+                    measurement,
+                    observerTransform,
+                    observerKinematics,
+                    innovation))
+                {
+                    continue;
+                }
+
+                if (innovation.mahalanobisSquared >
+                    RADAR_ASSOCIATION_GATE_4DOF)
+                {
+                    continue;
+                }
+
+                candidates.push_back({
+                    innovation.mahalanobisSquared,
+                    p,
+                    t
+                });
+            }
+        }
+
+        // ----------------------------------------------------
+        // 6. Find the globally optimal one-to-one assignments.
+        // ----------------------------------------------------
+
         AssignmentResult assignment =
             ResolveAssignments(
-                observerTracks,
-                observations,
+                originalTrackCount,
+                measurements.size(),
                 candidates
             );
 
-        // Correct matched tracks using the original radar measurements.
+        // ----------------------------------------------------
+        // 7. Correct successfully associated tracks.
+        // ----------------------------------------------------
+
         for (const auto& match : assignment.matchedPairs)
         {
-            UpdateExistingTrack(
+            const bool corrected =
+                UpdateExistingTrack(
+                    observerTracks[match.track],
+                    measurements[match.ping],
+                    observations[match.ping],
+                    observerTransform,
+                    observerKinematics
+                );
+
+            if (!corrected)
+            {
+                // A failed correction must not consume
+                // either the ping or the existing track.
+                assignment.pingUsed[match.ping] = false;
+                assignment.trackUsed[match.track] = false;
+
+                continue;
+            }
+
+            // Record one successful detection for this scan.
+            RecordScanResult(
                 observerTracks[match.track],
-                measurements[match.ping],
-                observations[match.ping],
-                observerTransform,
-                observerKinematics,
-                radar
+                true
             );
         }
 
-        // Initialize filters for unmatched measurements.
-        AddNewTracks(
-            observerTracks,
-            measurements,
-            observations,
-            assignment.pingUsed,
-            observerTransform,
-            observerKinematics,
-            radar
-        );
+        // ----------------------------------------------------
+        // 8. Record missed detections for unmatched old tracks.
+        // ----------------------------------------------------
 
-        // Preserve existing missing-track handling.
-        ProcessMissingTracks(
-            observerTracks,
-            assignment.trackUsed,
-            assignment.originalTrackCount
-        );
+        for (size_t t = 0; t < originalTrackCount; ++t)
+        {
+            if (assignment.trackUsed[t])
+                continue;
+
+            RecordScanResult(
+                observerTracks[t],
+                false
+            );
+        }
+
+        // ----------------------------------------------------
+        // 9. Start tentative tracks from unmatched measurements.
+        // ----------------------------------------------------
+
+        for (size_t p = 0; p < measurements.size(); ++p)
+        {
+            if (assignment.pingUsed[p])
+                continue;
+
+            RadarTrack newTrack =
+                CreateNewTrack(
+                    measurements[p],
+                    observations[p],
+                    observerTransform,
+                    observerKinematics
+                );
+
+            observerTracks.push_back(
+                std::move(newTrack)
+            );
+        }
     }
 }

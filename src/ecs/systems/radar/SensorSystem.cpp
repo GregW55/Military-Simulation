@@ -44,8 +44,12 @@ namespace
             return std::nullopt;
 
         const float horizontalRangeNM = std::sqrt(horizontalRangeSq);
+        const float altitudeDifferenceNM = (targetTransform.altitude - obsTransform.altitude) / METERS_PER_NM;
 
-         // ------------------------------------------------
+        const float slantRangeNM = std::sqrt( horizontalRangeSq + altitudeDifferenceNM * altitudeDifferenceNM );
+
+
+        // ------------------------------------------------
         // Check whether the target can be detected
         // ------------------------------------------------
 
@@ -57,21 +61,11 @@ namespace
             targetTransform.pos,
             targetTransform.altitude,
             targetRadarSignature.rcsFourthRoot,
-            horizontalRangeNM
+            horizontalRangeNM,
+            slantRangeNM
         );
 
         if (!detected) return std::nullopt;
-
-        // ------------------------------------------------
-        // Calculate true slant range
-        // ------------------------------------------------
-
-        const float altitudeDifferenceNM = (targetTransform.altitude - obsTransform.altitude) / METERS_PER_NM;
-
-        const float slantRangeNM = std::sqrt(
-            horizontalRangeSq +
-            altitudeDifferenceNM * altitudeDifferenceNM
-        );
 
         // ------------------------------------------------
         // Calculate true azimuth and elevation
@@ -166,6 +160,11 @@ namespace
 
         measurement.radialVelocityKnots =
             trueRadialVelocityKnots + velocityNoiseValue;
+
+        measurement.rangeSigmaNM = rangeError;
+        measurement.azimuthSigmaRadians = angleError;
+        measurement.elevationSigmaRadians = angleError;
+        measurement.radialVelocitySigmaKnots = velocityError;
 
         measurement.timestampSec = timestampSec;
 

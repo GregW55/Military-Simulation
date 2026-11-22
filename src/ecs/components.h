@@ -20,11 +20,17 @@ enum class EngagementStatus {
 };
 
 enum class TacticalState {
-    TRANSIT, PATROL, INTERCEPT, STANDOFF,  DEFEND
+    TRANSIT,
+    PATROL,
+    INTERCEPT,
+    STANDOFF,
+    DEFEND
 };
 
 enum class GuidancePhase {
-    MIDCOURSE_DATALINK, TERMINAL_PITBULL, INERTIAL_BLIND
+    MIDCOURSE_DATALINK,
+    TERMINAL_PITBULL,
+    INERTIAL_BLIND
 };
 
 enum class ThreatClass {
@@ -33,6 +39,12 @@ enum class ThreatClass {
     AIRCRAFT,           // Fast, airborne, medium RCS
     MISSILE_INBOUND,    // Very fast, tiny RCS, closing rapidly, low altitude
     FRIENDLY            // IFF confirmed friendly
+};
+
+enum class TrackLifecycle {
+    TENTATIVE,          // Newly detected; not yet sufficiently confirmed
+    CONFIRMED,          // Sufficient detections to establish a real track
+    COASTING            // Previously confirmed, but currently not detected
 };
 
 // ==============================
@@ -121,33 +133,57 @@ struct RadarMeasurement {
     float elevationRadians;
     float radialVelocityKnots;
 
+    // Measurements standard deviations (1 sigma)
+    float rangeSigmaNM = 0.0f;
+    float azimuthSigmaRadians = 0.0f;
+    float elevationSigmaRadians = 0.0f;
+    float radialVelocitySigmaKnots = 0.0f;
+
     float timestampSec;
 };
 
 struct RadarTrack {
-    uint32_t globalTrackId = NO_GLOBAL_TRACK;                         // Linked to the MasterTrackTable ID
+    // Global ID assigned by the tactical picture belonging to this observer's side. Zero means no global association
+    uint32_t globalTrackId = NO_GLOBAL_TRACK;
 
-    MathUtils::Vec2 latestPing;
-    MathUtils::Vec2 pos;
-    MathUtils::Vec2 vel;
+    MathUtils::Vec2 latestPing{};       // Last observed position
+
+    // Estimated state
+    MathUtils::Vec2 pos{};
+    MathUtils::Vec2 vel{};
 
     float altitude = 0.0f;
-    float ageSec = 0.0f;
-    bool hasVelocity = false;
+    float verticalVelocityNMPerSec = 0.0f;
+    float ageSec = 0.0f;                // Seconds since the last successful radar measurement
+    bool hasVelocity = false;           // True after the filter has received at least two measurements
     bool isMissing = false;
 
-    float speedKnots = 0.0f;                            // Derived from vel magnitude each update
-    float closingSpeedKnots = 0.0f;                     // Positive = closing on observer, negative = opening
-    float timeToImpactSec = -1.0f;                      // -1 means not on intercept course
-    float threatScore = 0.0f;                           // Higher = more urgent
+    // Calculated kinematic/threat information.
+    float speedKnots = 0.0f;
+    float closingSpeedKnots = 0.0f;
+    float timeToImpactSec = -1.0f;
+    float threatScore = 0.0f;
 
+    // Track existence is separate from object classification
+    TrackLifecycle lifecycle = TrackLifecycle::TENTATIVE;
+
+    // Five most recent completed radar scans
+    std::array<uint8_t, 5> recentScanHits{};
+
+    uint8_t scanHistoryCount = 0;
+    uint8_t scanHistoryNext = 0;
+    uint8_t missedScanCount = 0;
+
+    // Object classification
     ThreatClass classification = ThreatClass::UNKNOWN;
     float consistentObservationSec = 0.0f;
-    ThreatClass pendingClass = ThreatClass::UNKNOWN;    // ThreatClass we think it is, only after CLASSIFICATION_CONFIRM_SEC can we confirm
-    float pendingSec = 0.0f;                            // How long the threat class has been pending
 
+    ThreatClass pendingClass = ThreatClass::UNKNOWN;
+    float pendingSec = 0.0f;
+
+    // Six-state EKF
     KalmanState3D kalman;
-    float measurementSigmaNM = 0.0f;                    // 1-sigma horizontal error of a ping-derived observation
+    float measurementSigmaNM = 0.0f;
 };
 
 struct SharedThreatPicture

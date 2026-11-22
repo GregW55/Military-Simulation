@@ -143,7 +143,40 @@ namespace
         return true;
     }
 
-    void BuildMeasurementModel(
+    bool IsPositiveDefinite4(const Matrix4& matrix)
+    {
+        float L[4][4]{};
+
+        for (int row = 0; row < 4; ++row)
+        {
+            for (int col = 0; col <= row; ++col)
+            {
+                float sum = matrix[Index4(row, col)];
+
+                for (int k = 0; k < col; ++k)
+                    sum -= L[row][k] * L[col][k];
+
+                if (row == col)
+                {
+                    if (!std::isfinite(sum) || sum <= 1e-12f)
+                        return false;
+
+                    L[row][col] = std::sqrt(sum);
+                }
+                else
+                {
+                    if (L[col][col] <= 0.0f)
+                        return false;
+
+                    L[row][col] = sum / L[col][col];
+                }
+            }
+        }
+
+        return true;
+    }
+
+    bool BuildMeasurementModel(
         const KalmanState3D& state,
         const ObserverState& observer,
         std::array<float, 4>& predicted,
@@ -168,7 +201,7 @@ namespace
         {
             predicted.fill(0.0f);
             H.fill(0.0f);
-            return;
+            return false;
         }
 
         const float radialNumerator =
@@ -227,15 +260,194 @@ namespace
 
         H[Index4x6(3, 5)] =
             (dz / range) * NM_PER_SEC_TO_KNOTS;
+
+        return true;
     }
+}
+
+bool KalmanFilter3D::CalculateInnovation(
+    const KalmanState3D& state,
+    const RadarMeasurement& measurement,
+    const Transform2D& observer,
+    const Kinematics& observerKinematics,
+    RadarInnovation& result)
+{
+    result = {};
+
+    if (!state.initialized)
+        return false;
+
+    // The track must already have been predicted to the
+    // timestamp of this radar measurement.
+    constexpr float TIMESTAMP_TOLERANCE_SEC = 0.01f;
+
+    if (std::abs(
+        state.timestampSec - measurement.timestampSec
+    ) > TIMESTAMP_TOLERANCE_SEC)
+    {
+        return false;
+    }
+
+    const ObserverState observerState =
+        GetObserverState(observer, observerKinematics);
+
+    std::array<float, 4> predictedMeasurement{};
+
+    Matrix4x6 H{};
+
+    if (!BuildMeasurementModel(
+        state,
+        observerState,
+        predictedMeasurement,
+        H))
+    {
+        return false;
+    }
+
+    // --------------------------------------------------------
+    // Measurement noise covariance R.
+    // --------------------------------------------------------
+
+    const std::array<float, 4> R{
+        Square(std::max(0.000001f, measurement.rangeSigmaNM)),
+        Square(std::max(0.000001f, measurement.azimuthSigmaRadians)),
+        Square(std::max(0.000001f, measurement.elevationSigmaRadians)),
+        Square(std::max(0.001f, measurement.radialVelocitySigmaKnots))
+    };
+
+    // --------------------------------------------------------
+    // Residual: actual measurement - predicted measurement.
+    // --------------------------------------------------------
+
+    const std::array<float, 4> measured{
+        measurement.rangeNM,
+        measurement.azimuthRadians,
+        measurement.elevationRadians,
+        measurement.radialVelocityKnots
+    };
+
+    std::array<float, 4> residual{};
+
+    for (int i = 0; i < 4; ++i)
+    {
+        if (!std::isfinite(measured[i]) ||
+            !std::isfinite(predictedMeasurement[i]))
+        {
+            return false;
+        }
+
+        residual[i] = measured[i] - predictedMeasurement[i];
+    }
+
+    // Angles must use the shortest angular difference.
+    residual[1] = WrapRadians(residual[1]);
+    residual[2] = WrapRadians(residual[2]);
+
+    // --------------------------------------------------------
+    // Calculate P * H^T.
+    // --------------------------------------------------------
+
+    Matrix6x4 PHt{};
+
+    for (int row = 0; row < 6; ++row)
+    {
+        for (int col = 0; col < 4; ++col)
+        {
+            float value = 0.0f;
+
+            for (int k = 0; k < 6; ++k)
+            {
+                value +=
+                    state.P[Index6(row, k)] *
+                    H[Index4x6(col, k)];
+            }
+
+            PHt[Index6x4(row, col)] = value;
+        }
+    }
+
+    // --------------------------------------------------------
+    // Calculate S = H * P * H^T + R.
+    // --------------------------------------------------------
+
+    Matrix4 S{};
+
+    for (int row = 0; row < 4; ++row)
+    {
+        for (int col = 0; col < 4; ++col)
+        {
+            float value = 0.0f;
+
+            for (int k = 0; k < 6; ++k)
+            {
+                value +=
+                    H[Index4x6(row, k)] *
+                    PHt[Index6x4(k, col)];
+            }
+
+            S[Index4(row, col)] = value;
+        }
+    }
+
+    for (int i = 0; i < 4; ++i)
+        S[Index4(i, i)] += R[i];
+
+    if (!IsPositiveDefinite4(S))
+        return false;
+
+    Matrix4 inverseS{};
+
+    if (!Invert4x4(S, inverseS))
+        return false;
+
+    // --------------------------------------------------------
+    // Calculate Mahalanobis distance squared.
+    // d² = residual^T * inverse(S) * residual.
+    // --------------------------------------------------------
+
+    double distanceSquared = 0.0;
+
+    for (int row = 0; row < 4; ++row)
+    {
+        for (int col = 0; col < 4; ++col)
+        {
+            distanceSquared +=
+                static_cast<double>(residual[row]) *
+                inverseS[Index4(row, col)] *
+                residual[col];
+        }
+    }
+
+    if (!std::isfinite(distanceSquared) ||
+        distanceSquared < -1e-6)
+    {
+        return false;
+    }
+
+    // --------------------------------------------------------
+    // Return everything needed by both association and correction.
+    // --------------------------------------------------------
+
+    result.residual = residual;
+    result.covariance = S;
+    result.inverseCovariance = inverseS;
+    result.H = H;
+    result.PHt = PHt;
+    result.measurementVariance = R;
+
+    result.mahalanobisSquared =
+        static_cast<float>(std::max(0.0, distanceSquared));
+
+    result.valid = true;
+
+    return true;
 }
 
 void KalmanFilter3D::Initialize(
     KalmanState3D& state,
     const RadarMeasurement& measurement,
     const Transform2D& observer,
-    const Kinematics& observerKinematics,
-    const RadarEmitter& radar)
+    const Kinematics& observerKinematics)
 {
     state = {};
 
@@ -286,28 +498,119 @@ void KalmanFilter3D::Initialize(
     state.x[5] =
         observerState.velocity[2] + radialVelocity * losZ;
 
+    // --------------------------------------------------------
+    // 1. Get the measurement's standard deviations.
+    // --------------------------------------------------------
+
     const float rangeSigma =
-        std::max(0.0001f, radar.rangeErrorNM);
+        std::max(0.000001f, measurement.rangeSigmaNM);
 
-    const float angleSigma =
-        std::max(0.000001f, radar.angleErrorRadians);
+    const float azimuthSigma =
+        std::max(0.000001f, measurement.azimuthSigmaRadians);
 
-    const float positionVariance =
-        Square(rangeSigma) +
-        Square(measurement.rangeNM * angleSigma);
+    const float elevationSigma =
+        std::max(0.000001f, measurement.elevationSigmaRadians);
 
     const float radialVelocitySigma =
-        std::max(0.001f, radar.velocityErrorKnots) /
-        NM_PER_SEC_TO_KNOTS;
+        std::max(0.001f, measurement.radialVelocitySigmaKnots)
+        / NM_PER_SEC_TO_KNOTS;
 
-    const float velocityVariance =
-        Square(radialVelocitySigma) + Square(0.25f);
 
-    for (int i = 0; i < 3; ++i)
-        state.P[Index6(i, i)] = positionVariance;
+    // --------------------------------------------------------
+    // 2. Transform polar position uncertainty into Cartesian
+    //    position uncertainty.
+    // --------------------------------------------------------
 
-    for (int i = 3; i < 6; ++i)
-        state.P[Index6(i, i)] = velocityVariance;
+    const float r = measurement.rangeNM;
+    const float az = measurement.azimuthRadians;
+    const float el = measurement.elevationRadians;
+
+    const float G[3][3] =
+    {
+        {
+            std::cos(el) * std::cos(az),
+            -r * std::cos(el) * std::sin(az),
+            -r * std::sin(el) * std::cos(az)
+        },
+        {
+            std::cos(el) * std::sin(az),
+            r * std::cos(el) * std::cos(az),
+            -r * std::sin(el) * std::sin(az)
+        },
+        {
+            std::sin(el),
+            0.0f,
+            r * std::cos(el)
+        }
+    };
+
+    // These are variances, not standard deviations.
+    // R = sigma squared.
+    const float polarVariance[3] =
+    {
+        rangeSigma * rangeSigma,
+        azimuthSigma * azimuthSigma,
+        elevationSigma * elevationSigma
+    };
+
+    // Calculate P_position = G * R * G^T.
+
+    for (int row = 0; row < 3; ++row)
+    {
+        for (int col = 0; col < 3; ++col)
+        {
+            float variance = 0.0f;
+
+            for (int k = 0; k < 3; ++k)
+            {
+                variance +=
+                    G[row][k] *
+                    polarVariance[k] *
+                    G[col][k];
+            }
+
+            state.P[Index6(row, col)] = variance;
+        }
+
+        // Prevent an exactly zero diagonal variance.
+        state.P[Index6(row, row)] =
+            std::max(1e-10f, state.P[Index6(row, row)]);
+    }
+
+
+    // --------------------------------------------------------
+    // 3. Initialize velocity uncertainty.
+    // --------------------------------------------------------
+
+    const float u[3] =
+    {
+        losX,
+        losY,
+        losZ
+    };
+
+    constexpr float TANGENTIAL_VELOCITY_SIGMA_NM_S = 0.25f;
+
+    const float tangentialVariance =
+        TANGENTIAL_VELOCITY_SIGMA_NM_S *
+        TANGENTIAL_VELOCITY_SIGMA_NM_S;
+
+    const float radialVariance =
+        radialVelocitySigma * radialVelocitySigma;
+
+    for (int row = 0; row < 3; ++row)
+    {
+        for (int col = 0; col < 3; ++col)
+        {
+            const float identity =
+                row == col ? 1.0f : 0.0f;
+
+            state.P[Index6(row + 3, col + 3)] =
+                radialVariance * u[row] * u[col] +
+                tangentialVariance *
+                    (identity - u[row] * u[col]);
+        }
+    }
 
     state.timestampSec = measurement.timestampSec;
     state.measurementCount = 1;
@@ -372,101 +675,25 @@ bool KalmanFilter3D::Correct(
     KalmanState3D& state,
     const RadarMeasurement& measurement,
     const Transform2D& observer,
-    const Kinematics& observerKinematics,
-    const RadarEmitter& radar)
+    const Kinematics& observerKinematics)
 {
-    if (!state.initialized)
-        return false;
+    RadarInnovation innovation{};
 
-    const ObserverState observerState =
-        GetObserverState(observer, observerKinematics);
-
-    std::array<float, 4> predictedMeasurement{};
-    Matrix4x6 H{};
-
-    BuildMeasurementModel(
+    if (!CalculateInnovation(
         state,
-        observerState,
-        predictedMeasurement,
-        H
-    );
-
-    const float dx = state.x[0] - observerState.position[0];
-    const float dy = state.x[1] - observerState.position[1];
-
-    if (std::sqrt(dx * dx + dy * dy) <
-        MIN_HORIZONTAL_RANGE_NM)
+        measurement,
+        observer,
+        observerKinematics,
+        innovation))
     {
         return false;
     }
 
-    const std::array<float, 4> measured{
-        measurement.rangeNM,
-        measurement.azimuthRadians,
-        measurement.elevationRadians,
-        measurement.radialVelocityKnots
-    };
-
-    std::array<float, 4> residual{};
-
-    for (int i = 0; i < 4; ++i)
-        residual[i] = measured[i] - predictedMeasurement[i];
-
-    // Angular residuals must use the shortest angular difference.
-    residual[1] = WrapRadians(residual[1]);
-    residual[2] = WrapRadians(residual[2]);
-
-    Matrix6x4 PHt{};
-
-    // P * H^T.
-    for (int row = 0; row < 6; ++row)
-    {
-        for (int col = 0; col < 4; ++col)
-        {
-            float value = 0.0f;
-
-            for (int k = 0; k < 6; ++k)
-            {
-                value +=
-                    state.P[Index6(row, k)] *
-                    H[Index4x6(col, k)];
-            }
-
-            PHt[Index6x4(row, col)] = value;
-        }
-    }
-
-    // S = H * P * H^T + R.
-    Matrix4 S{};
-
-    for (int row = 0; row < 4; ++row)
-    {
-        for (int col = 0; col < 4; ++col)
-        {
-            float value = 0.0f;
-
-            for (int k = 0; k < 6; ++k)
-            {
-                value +=
-                    H[Index4x6(row, k)] *
-                    PHt[Index6x4(k, col)];
-            }
-
-            S[Index4(row, col)] = value;
-        }
-    }
-
-    S[Index4(0, 0)] += Square(std::max(0.0001f, radar.rangeErrorNM));
-    S[Index4(1, 1)] += Square(std::max(0.000001f, radar.angleErrorRadians));
-    S[Index4(2, 2)] += Square(std::max(0.000001f, radar.angleErrorRadians));
-    S[Index4(3, 3)] += Square(std::max(0.001f, radar.velocityErrorKnots));
-
-    Matrix4 inverseS{};
-
-    if (!Invert4x4(S, inverseS))
-        return false;
-
+    // --------------------------------------------------------
+    // Calculate Kalman gain:
     // K = P * H^T * inverse(S).
+    // --------------------------------------------------------
+
     Matrix6x4 K{};
 
     for (int row = 0; row < 6; ++row)
@@ -478,26 +705,38 @@ bool KalmanFilter3D::Correct(
             for (int k = 0; k < 4; ++k)
             {
                 value +=
-                    PHt[Index6x4(row, k)] *
-                    inverseS[Index4(k, col)];
+                    innovation.PHt[Index6x4(row, k)] *
+                    innovation.inverseCovariance[Index4(k, col)];
             }
 
             K[Index6x4(row, col)] = value;
         }
     }
 
-    // x = x + K * residual.
+    // --------------------------------------------------------
+    // Calculate updated state without modifying the real state.
+    // --------------------------------------------------------
+
+    std::array<float, 6> newX = state.x;
+
     for (int row = 0; row < 6; ++row)
     {
         for (int col = 0; col < 4; ++col)
         {
-            state.x[row] +=
-                K[Index6x4(row, col)] * residual[col];
+            newX[row] +=
+                K[Index6x4(row, col)] *
+                innovation.residual[col];
         }
+
+        if (!std::isfinite(newX[row]))
+            return false;
     }
 
+    // --------------------------------------------------------
     // Joseph covariance update:
     // P = (I - KH)P(I - KH)^T + KRK^T.
+    // --------------------------------------------------------
+
     Matrix6 A{};
 
     for (int row = 0; row < 6; ++row)
@@ -510,7 +749,7 @@ bool KalmanFilter3D::Correct(
             {
                 value -=
                     K[Index6x4(row, k)] *
-                    H[Index4x6(k, col)];
+                    innovation.H[Index4x6(k, col)];
             }
 
             A[Index6(row, col)] = value;
@@ -546,14 +785,6 @@ bool KalmanFilter3D::Correct(
         }
     }
 
-    // R is diagonal.
-    const std::array<float, 4> R{
-        Square(std::max(0.0001f, radar.rangeErrorNM)),
-        Square(std::max(0.000001f, radar.angleErrorRadians)),
-        Square(std::max(0.000001f, radar.angleErrorRadians)),
-        Square(std::max(0.001f, radar.velocityErrorKnots))
-    };
-
     for (int row = 0; row < 6; ++row)
     {
         for (int col = 0; col < 6; ++col)
@@ -562,13 +793,13 @@ bool KalmanFilter3D::Correct(
             {
                 newP[Index6(row, col)] +=
                     K[Index6x4(row, k)] *
-                    R[k] *
+                    innovation.measurementVariance[k] *
                     K[Index6x4(col, k)];
             }
         }
     }
 
-    // Remove tiny floating-point asymmetries.
+    // Restore numerical symmetry.
     for (int row = 0; row < 6; ++row)
     {
         for (int col = row; col < 6; ++col)
@@ -583,11 +814,23 @@ bool KalmanFilter3D::Correct(
             newP[Index6(col, row)] = average;
         }
 
+        if (!std::isfinite(newP[Index6(row, row)]) ||
+            newP[Index6(row, row)] <= 0.0f)
+        {
+            return false;
+        }
+
         newP[Index6(row, row)] =
             std::max(1e-10f, newP[Index6(row, row)]);
     }
 
+    // --------------------------------------------------------
+    // Commit only after every calculation succeeded.
+    // --------------------------------------------------------
+
+    state.x = newX;
     state.P = newP;
+
     ++state.measurementCount;
 
     return true;
@@ -618,6 +861,7 @@ void KalmanFilter3D::CopyToTrack(RadarTrack& track)
         ) * NM_PER_SEC_TO_KNOTS;
 
     // One measurement gives radial velocity but not a full 3D velocity.
-    track.hasVelocity =
-        track.kalman.measurementCount >= 2;
+    track.hasVelocity = track.kalman.measurementCount >= 2;
+
+    track.verticalVelocityNMPerSec = track.kalman.x[5];
 }

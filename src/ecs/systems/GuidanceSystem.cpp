@@ -442,7 +442,7 @@ namespace {
 
     float Systems::PlanMissileAltitude(const Transform2D& trans, const Kinematics& kin,
             const Aerodynamics& aero, const SeekerHead&seeker) {
-        float targetAlt = 0;
+        float targetAlt = 0.0f;
         if (seeker.hasLiveTarget) {
             targetAlt = aero.cruiseAltitudeMeters < 100.0f ? 10000.0f : aero.cruiseAltitudeMeters;
 
@@ -478,6 +478,9 @@ namespace {
                     }
                 }
             }
+        }
+        else {
+            targetAlt = trans.altitude;
         }
 
         return targetAlt;
