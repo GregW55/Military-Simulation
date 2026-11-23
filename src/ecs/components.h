@@ -146,7 +146,7 @@ struct RadarTrack {
     // Global ID assigned by the tactical picture belonging to this observer's side. Zero means no global association
     uint32_t globalTrackId = NO_GLOBAL_TRACK;
 
-    MathUtils::Vec2 latestPing{};       // Last observed position
+    MathUtils::Vec2 latestPing{};           // Last observed position
 
     // Estimated state
     MathUtils::Vec2 pos{};
@@ -154,8 +154,9 @@ struct RadarTrack {
 
     float altitude = 0.0f;
     float verticalVelocityNMPerSec = 0.0f;
-    float ageSec = 0.0f;                // Seconds since the last successful radar measurement
-    bool hasVelocity = false;           // True after the filter has received at least two measurements
+    float ageSec = 0.0f;                    // Seconds since the last successful radar measurement
+    float lastMeasurementTimeSec = 0.0f;    // Time of the most recent successful measurement
+    bool hasVelocity = false;               // True after the filter has received at least two measurements
     bool isMissing = false;
 
     // Calculated kinematic/threat information.
@@ -238,6 +239,9 @@ struct MasterTrackTable
     {
         RadarTrack track;
         float confidence = 1.0f;
+
+        // Last measurement from each observer that was incorporated into this global track
+        std::unordered_map<entt::entity, float> lastFusedMeasurementTime;
     };
 
     struct SideTable

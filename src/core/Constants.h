@@ -84,6 +84,9 @@ constexpr float MIN_AMMO_RESERVE_RATIO = 0.15f;                         // ~15% 
 // It is not a physical distance in nautical miles. It is a normalized statistical difference between a measurement and a predicted measurement.
 constexpr float RADAR_ASSOCIATION_GATE_4DOF = 13.2767f;
 
+constexpr float GLOBAL_ASSOCIATION_GATE_3DOF = 11.3449f;
+constexpr float GLOBAL_ASSOCIATION_GATE_6DOF = 16.8119f;
+
 // ==========================================
 // 5. DATALINK & NETWORKING
 // ==========================================

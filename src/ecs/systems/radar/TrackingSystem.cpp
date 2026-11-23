@@ -1,4 +1,3 @@
-#include "../../../utils/TrackCorrelation.h"
 #include "../../../utils/KalmanFilter3D.h"
 #include "../../Systems.h"
 #include "../../components.h"
@@ -305,6 +304,7 @@ namespace {
         track.latestPing = observation.pos;
 
         track.ageSec = 0.0f;
+        track.lastMeasurementTimeSec = measurement.timestampSec;
         track.isMissing = false;
 
         // --------------------------------------------------------
@@ -432,6 +432,7 @@ namespace {
         track.verticalVelocityNMPerSec = 0.0f;
 
         track.ageSec = 0.0f;
+        track.lastMeasurementTimeSec = measurement.timestampSec;
         track.isMissing = false;
         track.hasVelocity = false;
 

@@ -95,6 +95,7 @@ if(BUILD_TESTING)
             src/core/MapProjection.cpp
             src/utils/MathUtils.cpp
             src/utils/KalmanFilter3D.cpp
+            src/utils/TrackFusion.h
     )
 
     target_include_directories(RadarSystemTests PRIVATE
