@@ -125,6 +125,7 @@ namespace {
                 Systems::DestroyMissile(registry, missile, MissileEventType::KILLED_THREAT, distNM);
                 Systems::DestroyMissile(registry, otherMissile, MissileEventType::SHOT_DOWN, distNM);
 
+
                 if (VERBOSE_COMBAT_LOG) {
                     std::cout << "[INTERCEPT] Missile " << (uint32_t) missile
                             << " destroyed missile " << (uint32_t) otherMissile << "\n";

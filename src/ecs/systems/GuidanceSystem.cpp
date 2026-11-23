@@ -16,37 +16,69 @@ namespace {
     // === MISSILE GUIDANCE ===
     // ========================
     RadarTrack* FindTerminalTrack(
-        SeekerHead& seeker,
-        Transform2D& trans,
-        Kinematics& kin,
-        std::vector<RadarTrack>& myTracks)
+     const SeekerHead& seeker,
+     Transform2D& trans,
+     Kinematics& kin,
+     std::vector<RadarTrack>& myTracks)
     {
-        // Where the target we were assigned should be by now, if it kept its course
-        const MathUtils::Vec2 expectedTargetPos =
-            MathUtils::ExtrapolatePosition(seeker.targetPos, seeker.targetVel, seeker.timeSinceLastCorrelation);
+        if (seeker.targetGlobalTrackId == NO_GLOBAL_TRACK)
+            return nullptr;
 
-        float closestDist = 999999.0f;
-        RadarTrack* best = nullptr;
+        for (auto& track : myTracks)
+        {
+            // ========================================================
+            // 1. TARGET IDENTITY
+            // ========================================================
 
-        for (auto& track : myTracks) {
-            const float distToTrack = MathUtils::GetDistance(trans.pos, track.pos);
-            if (distToTrack < 0.001f) continue;
+            if (track.globalTrackId != seeker.targetGlobalTrackId)
+                continue;
 
-            // Rule 1: it must be inside the seeker's forward-facing cone
-            if (MathUtils::AngleOffHeadingDegrees(kin.headingVector, trans.pos, track.pos) > SEEKER_FOV_DEGREES) continue;
+            // ========================================================
+            // 2. TRACK QUALITY
+            // ========================================================
 
-            // Rule 2: it must be near where our assigned target should be
-            if (MathUtils::GetDistance(expectedTargetPos, track.pos) > SEEKER_IDENTITY_GATE_NM) continue;
+            if (track.lifecycle != TrackLifecycle::CONFIRMED)
+                continue;
 
-            // Rule 3: it must be moving like our assigned target was
-            if (MathUtils::VelocityDifferenceKnots(track.vel, seeker.targetVel) > MAX_PLAUSIBLE_VEL_CHANGE_KNOTS) continue;
+            if (track.isMissing)
+                continue;
 
-            if (distToTrack < closestDist) {
-                closestDist = distToTrack;
-                best = &track;
+            if (!track.hasVelocity)
+                continue;
+
+            if (track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC)
+                continue;
+
+            // ========================================================
+            // 3. SEEKER RANGE
+            // ========================================================
+
+            const float distToTrack =
+                MathUtils::GetDistance(trans.pos, track.pos);
+
+            if (distToTrack < 0.001f)
+                continue;
+
+            if (distToTrack > seeker.rangeNM)
+                continue;
+
+            // ========================================================
+            // 4. SEEKER FIELD OF VIEW
+            // ========================================================
+
+            if (MathUtils::AngleOffHeadingDegrees(
+                kin.headingVector,
+                trans.pos,
+                track.pos) > SEEKER_FOV_DEGREES)
+            {
+                continue;
             }
+
+            // This is the assigned target, with a confirmed
+            // track and valid velocity estimate.
+            return &track;
         }
-        if (best && closestDist < seeker.rangeNM && best->ageSec < TRACK_ACTIONABLE_FRESHNESS_SEC) return best;
+
         return nullptr;
     }
 
@@ -59,89 +91,188 @@ namespace {
         float deltaTime)
     {
         seeker.timeSinceLaunchSec += deltaTime;
-        bool missileIsHostile = registry.get<IFF>(entity).isHostile;
 
-        // Network-wide datalink: check EVERY friendly ship's radar picture
-        RadarTrack* best = nullptr;
-        float closestDist = DATALINK_BREAK_DIST_NM;
+        const bool missileIsHostile =
+            registry.get<IFF>(entity).isHostile;
 
-        auto& detectionData = registry.ctx().get<RadarDetectionData>();
-        auto radarShips = registry.view<RadarEmitter, IFF>();
+        // ============================================================
+        // 1. LOOK UP THE ASSIGNED GLOBAL TRACK
+        // ============================================================
 
-        for (auto observer : radarShips) {
-            if (radarShips.get<IFF>(observer).isHostile != missileIsHostile) continue;
+        auto& masterTable =
+            registry.ctx().get<MasterTrackTable>();
 
-            for (auto& track : detectionData.activeTracks[observer]) {
-                if (track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC)
-                    continue;
+        const auto& side =
+            masterTable.GetSide(missileIsHostile);
 
-                if (track.consistentObservationSec < MIN_OBSERVATION_TIME_SEC)
-                    continue;
+        bool receivedNewMeasurement = false;
 
-                const MathUtils::Vec2 predictedTargetPos =
-                    MathUtils::ExtrapolatePosition(
-                        seeker.targetPos,
-                        seeker.targetVel,
-                        seeker.timeSinceLastCorrelation);
+        if (seeker.targetGlobalTrackId != NO_GLOBAL_TRACK)
+        {
+            auto it = side.activeGlobalTracks.find(
+                seeker.targetGlobalTrackId
+            );
 
-                const float d = MathUtils::GetDistance(predictedTargetPos, track.pos);
+            if (it != side.activeGlobalTracks.end())
+            {
+                const RadarTrack& target =
+                    it->second.track;
 
-                if (d >= closestDist) continue;
+                if (target.lifecycle == TrackLifecycle::CONFIRMED)
+                {
+                    constexpr float TIME_EPSILON = 0.0001f;
 
-                // If the radar has a velocity estimate, reject implausible changes
-                if (track.hasVelocity && MathUtils::VelocityDifferenceKnots(
-                        track.vel, seeker.targetVel) > MAX_PLAUSIBLE_VEL_CHANGE_KNOTS) {
-                    continue;
+                    // Only consume an update when the global track
+                    // has received a genuinely newer measurement.
+                    if (target.lastMeasurementTimeSec >
+                        seeker.lastTargetMeasurementTimeSec + TIME_EPSILON)
+                    {
+                        seeker.targetPos = target.pos;
+                        seeker.targetVel = target.vel;
+
+                        seeker.targetAltitude = target.altitude;
+
+                        seeker.targetVerticalVelocityNMPerSec =
+                            target.verticalVelocityNMPerSec;
+
+                        seeker.lastTargetMeasurementTimeSec =
+                            target.lastMeasurementTimeSec;
+
+                        seeker.timeSinceLastCorrelation = 0.0f;
+
+                        receivedNewMeasurement = true;
+                    }
                 }
-
-                closestDist = d;
-                best = &track;
-
             }
         }
-        if (best) {
-            seeker.targetPos = best->pos;
-            seeker.targetVel = best->vel;
-            seeker.targetAltitude = best->altitude;
-            seeker.timeSinceLastCorrelation = 0.0f;
-            seeker.hasLiveTarget = true;
-        } else {
+
+        // ============================================================
+        // 2. HANDLE DATALINK LOSS
+        // ============================================================
+
+        if (!receivedNewMeasurement)
+        {
             seeker.timeSinceLastCorrelation += deltaTime;
-            seeker.hasLiveTarget = false;
-            if (seeker.timeSinceLastCorrelation > DATALINK_TIMEOUT_SEC) seeker.phase = GuidancePhase::INERTIAL_BLIND;
         }
 
-        MathUtils::Vec2 interceptPos = MathUtils::PredictIntercept(
-            trans.pos, kin.currentSpeedKnots, seeker.targetPos, seeker.targetVel);
+        seeker.hasLiveTarget =
+            seeker.timeSinceLastCorrelation <= DATALINK_TIMEOUT_SEC;
 
-        float distToIntercept = MathUtils::GetDistance(interceptPos, trans.pos);
-
-        if (distToIntercept > 0.001f) {
-            MathUtils::Vec2 desiredHeading = MathUtils::GetDirection(trans.pos, interceptPos);
-
-            float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
-            float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
-            float angleDiff = MathUtils::GetShortestAngleDiff(currentAngle, desiredAngle);
-
-            float maxTurnRateDeg = MathUtils::GetMaxTurnRateDegSec(kin.currentSpeedKnots, seeker.maxLateralGs);
-            float maxStep = maxTurnRateDeg * deltaTime;
-            float clampedStep = std::clamp(angleDiff, -maxStep, maxStep);
-
-            float newAngle = currentAngle + clampedStep;
-            kin.headingVector.x = std::cos(newAngle * DEG_TO_RAD);
-            kin.headingVector.y = std::sin(newAngle * DEG_TO_RAD);
+        // Semi-active seekers depend on external tracking support.
+        // Active radar seekers can continue inertially until their
+        // own radar enters the terminal phase.
+        if (!seeker.hasLiveTarget &&
+            seeker.type != SeekerType::ACTIVE_RADAR)
+        {
+            seeker.phase = GuidancePhase::INERTIAL_BLIND;
         }
 
-        if (seeker.type == SeekerType::ACTIVE_RADAR && distToIntercept < seeker.rangeNM &&
-            seeker.timeSinceLaunchSec > MIN_TIME_BEFORE_SEEKER_ACTIVATION_SEC) {
+        // ============================================================
+        // 3. PREDICT TARGET POSITION
+        // ============================================================
+
+        const MathUtils::Vec2 predictedTargetPos =
+            MathUtils::ExtrapolatePosition(
+                seeker.targetPos,
+                seeker.targetVel,
+                seeker.timeSinceLastCorrelation
+            );
+
+        // ============================================================
+        // 4. CALCULATE INTERCEPT
+        // ============================================================
+
+        const MathUtils::Vec2 interceptPos =
+            MathUtils::PredictIntercept(
+                trans.pos,
+                kin.currentSpeedKnots,
+                predictedTargetPos,
+                seeker.targetVel
+            );
+
+        const float distToIntercept =
+            MathUtils::GetDistance(trans.pos, interceptPos);
+
+        if (distToIntercept > 0.001f)
+        {
+            const MathUtils::Vec2 desiredHeading =
+                MathUtils::GetDirection(trans.pos, interceptPos);
+
+            const float currentAngle =
+                std::atan2(
+                    kin.headingVector.y,
+                    kin.headingVector.x
+                ) * RAD_TO_DEG;
+
+            const float desiredAngle =
+                std::atan2(
+                    desiredHeading.y,
+                    desiredHeading.x
+                ) * RAD_TO_DEG;
+
+            const float angleDiff =
+                MathUtils::GetShortestAngleDiff(
+                    currentAngle,
+                    desiredAngle
+                );
+
+            const float maxTurnRateDeg =
+                MathUtils::GetMaxTurnRateDegSec(
+                    kin.currentSpeedKnots,
+                    seeker.maxLateralGs
+                );
+
+            const float maxStep =
+                maxTurnRateDeg * deltaTime;
+
+            const float clampedStep =
+                std::clamp(angleDiff, -maxStep, maxStep);
+
+            const float newAngle =
+                currentAngle + clampedStep;
+
+            kin.headingVector.x =
+                std::cos(newAngle * DEG_TO_RAD);
+
+            kin.headingVector.y =
+                std::sin(newAngle * DEG_TO_RAD);
+        }
+
+        // ============================================================
+        // 5. TERMINAL SEEKER ACTIVATION
+        // ============================================================
+
+        if (seeker.phase == GuidancePhase::MIDCOURSE_DATALINK &&
+            seeker.type != SeekerType::PASSIVE_IR &&
+            distToIntercept < seeker.rangeNM &&
+            seeker.timeSinceLaunchSec > MIN_TIME_BEFORE_SEEKER_ACTIVATION_SEC)
+        {
+            // Active radar turns on its own radar.
+            if (seeker.type == SeekerType::ACTIVE_RADAR)
+            {
+                registry.emplace_or_replace<RadarEmitter>(
+                    entity,
+                    seeker.rangeNM,
+                    seeker.rangeNM * seeker.rangeNM,
+                    0.25f,
+                    0.0f
+                );
+            }
+
+            // Semi-active missiles enter terminal guidance using
+            // the designated illuminating ship's radar track.
             seeker.phase = GuidancePhase::TERMINAL_PITBULL;
-            registry.emplace_or_replace<RadarEmitter>(entity,seeker.rangeNM, seeker.rangeNM * seeker.rangeNM, 0.25f, 0.0f);
 
-            if (VERBOSE_COMBAT_LOG) {
-                std::cout << "[T=" << Systems::GetSimTime(registry) << "s] [SEEKER] Missile " << (uint32_t)entity << " going active, dist to intercept: "
-                                      << distToIntercept << "nm\n";
+            if (VERBOSE_COMBAT_LOG)
+            {
+                std::cout
+                    << "[T=" << Systems::GetSimTime(registry)
+                    << "s] [SEEKER] Missile "
+                    << static_cast<uint32_t>(entity)
+                    << " entering terminal guidance. Dist: "
+                    << distToIntercept << "nm\n";
             }
-            }
+        }
     }
 
     void UpdateTerminalGuidance(
@@ -152,76 +283,241 @@ namespace {
         SeekerHead& seeker,
         float deltaTime)
     {
-        auto& myTracks = registry.ctx().get<RadarDetectionData>().activeTracks[entity];
+        auto& detectionData =
+            registry.ctx().get<RadarDetectionData>();
 
-        bool foundCorrelatedTrack = false;
+        std::vector<RadarTrack>* trackSource = nullptr;
 
-        if (!myTracks.empty()) {
-            RadarTrack* best = FindTerminalTrack(seeker, trans, kin, myTracks);
+        // ============================================================
+        // 1. CHOOSE THE CORRECT TRACK SOURCE
+        // ============================================================
 
-            if (best) {
-                seeker.targetPos = best->pos;
-                seeker.targetVel = best->vel;
-                seeker.targetAltitude = best->altitude;
-                seeker.timeSinceLastCorrelation = 0.0f;
-                foundCorrelatedTrack = true;
+        if (seeker.type == SeekerType::ACTIVE_RADAR)
+        {
+            // Active radar: use the missile's own local radar picture.
+            auto it = detectionData.activeTracks.find(entity);
+
+            if (it != detectionData.activeTracks.end())
+            {
+                trackSource = &it->second;
+            }
+        }
+        else if (seeker.type == SeekerType::SEMI_ACTIVE)
+        {
+            // Semi-active: the launching platform must remain
+            // an active radar observer on the missile's side.
+            if (registry.valid(seeker.shooter) &&
+                registry.all_of<RadarEmitter, IFF>(seeker.shooter))
+            {
+                const bool sameSide =
+                    registry.get<IFF>(seeker.shooter).isHostile ==
+                    registry.get<IFF>(entity).isHostile;
+
+                if (sameSide)
+                {
+                    auto it =
+                        detectionData.activeTracks.find(seeker.shooter);
+
+                    if (it != detectionData.activeTracks.end())
+                    {
+                        trackSource = &it->second;
+                    }
+                }
             }
         }
 
-        seeker.hasLiveTarget = foundCorrelatedTrack;
-        if (foundCorrelatedTrack) {
-            float maxTurnRateDeg = MathUtils::GetMaxTurnRateDegSec(kin.currentSpeedKnots, seeker.maxLateralGs);
-            float turnRateDeg = MathUtils::CalculateProNavTurnRate(
-                trans.pos, kin.velocity, seeker.targetPos, seeker.targetVel, 4.0f);
-            turnRateDeg = std::clamp(turnRateDeg, -maxTurnRateDeg, maxTurnRateDeg);
+        // PASSIVE_IR currently has no separate IR sensor or
+        // measurement pipeline in this codebase. It will coast
+        // on its last target estimate until that is implemented.
 
-            float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
-            currentAngle += (turnRateDeg * deltaTime);
-            kin.headingVector.x = std::cos(currentAngle * DEG_TO_RAD);
-            kin.headingVector.y = std::sin(currentAngle * DEG_TO_RAD);
-        } else {
-            seeker.hasLiveTarget = false;
-            seeker.timeSinceLastCorrelation += deltaTime;
+        // ============================================================
+        // 2. FIND THE ASSIGNED TARGET
+        // ============================================================
 
-            // Keep steering toward the extrapolated last-known target.
-            const MathUtils::Vec2 predictedTargetPos =
-                MathUtils::ExtrapolatePosition(
-                    seeker.targetPos,
-                    seeker.targetVel,
-                    seeker.timeSinceLastCorrelation);
+        RadarTrack* best = nullptr;
 
-            const MathUtils::Vec2 desiredHeading = MathUtils::GetDirection(trans.pos, predictedTargetPos);
+        if (trackSource)
+        {
+            best = FindTerminalTrack(
+                seeker,
+                trans,
+                kin,
+                *trackSource
+            );
+        }
 
-            const float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
+        // ============================================================
+        // 3. ACCEPT ONLY NEW MEASUREMENTS
+        // ============================================================
 
-            const float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
+        if (best)
+        {
+            constexpr float TIME_EPSILON = 0.0001f;
 
-            const float angleDiff = MathUtils::GetShortestAngleDiff(currentAngle, desiredAngle);
+            if (best->lastMeasurementTimeSec >
+                seeker.lastTargetMeasurementTimeSec + TIME_EPSILON)
+            {
+                seeker.targetPos = best->pos;
+                seeker.targetVel = best->vel;
 
-            const float maxTurnRateDeg = MathUtils::GetMaxTurnRateDegSec(kin.currentSpeedKnots, seeker.maxLateralGs);
+                seeker.targetAltitude = best->altitude;
 
-            const float maxStep = maxTurnRateDeg * deltaTime;
-            const float clampedStep = std::clamp(angleDiff, -maxStep, maxStep);
+                seeker.targetVerticalVelocityNMPerSec =
+                    best->verticalVelocityNMPerSec;
 
-            const float newAngle = currentAngle + clampedStep;
+                seeker.lastTargetMeasurementTimeSec =
+                    best->lastMeasurementTimeSec;
 
-            kin.headingVector.x = std::cos(newAngle * DEG_TO_RAD);
-            kin.headingVector.y = std::sin(newAngle * DEG_TO_RAD);
-
-            if (seeker.timeSinceLastCorrelation > DATALINK_TIMEOUT_SEC) {
-                seeker.phase = GuidancePhase::INERTIAL_BLIND;
+                seeker.timeSinceLastCorrelation = 0.0f;
             }
+            else
+            {
+                // The track still exists, but no new measurement
+                // has arrived.
+                seeker.timeSinceLastCorrelation += deltaTime;
+            }
+        }
+        else
+        {
+            seeker.timeSinceLastCorrelation += deltaTime;
+        }
+
+        seeker.hasLiveTarget =
+            best != nullptr &&
+            seeker.timeSinceLastCorrelation <= DATALINK_TIMEOUT_SEC;
+
+        // ============================================================
+        // 4. PREDICT TARGET POSITION
+        // ============================================================
+
+        const MathUtils::Vec2 predictedTargetPos =
+            MathUtils::ExtrapolatePosition(
+                seeker.targetPos,
+                seeker.targetVel,
+                seeker.timeSinceLastCorrelation
+            );
+
+        // ============================================================
+        // 5. TERMINAL GUIDANCE
+        // ============================================================
+
+        if (seeker.hasLiveTarget)
+        {
+            float maxTurnRateDeg =
+                MathUtils::GetMaxTurnRateDegSec(
+                    kin.currentSpeedKnots,
+                    seeker.maxLateralGs
+                );
+
+            float turnRateDeg =
+                MathUtils::CalculateProNavTurnRate(
+                    trans.pos,
+                    kin.velocity,
+                    predictedTargetPos,
+                    seeker.targetVel,
+                    4.0f
+                );
+
+            turnRateDeg =
+                std::clamp(
+                    turnRateDeg,
+                    -maxTurnRateDeg,
+                    maxTurnRateDeg
+                );
+
+            float currentAngle =
+                std::atan2(
+                    kin.headingVector.y,
+                    kin.headingVector.x
+                ) * RAD_TO_DEG;
+
+            currentAngle += turnRateDeg * deltaTime;
+
+            kin.headingVector.x =
+                std::cos(currentAngle * DEG_TO_RAD);
+
+            kin.headingVector.y =
+                std::sin(currentAngle * DEG_TO_RAD);
+        }
+        else
+        {
+            // No valid current measurement. Continue toward
+            // the extrapolated last-known target position.
+            const MathUtils::Vec2 desiredHeading =
+                MathUtils::GetDirection(
+                    trans.pos,
+                    predictedTargetPos
+                );
+
+            const float currentAngle =
+                std::atan2(
+                    kin.headingVector.y,
+                    kin.headingVector.x
+                ) * RAD_TO_DEG;
+
+            const float desiredAngle =
+                std::atan2(
+                    desiredHeading.y,
+                    desiredHeading.x
+                ) * RAD_TO_DEG;
+
+            const float angleDiff =
+                MathUtils::GetShortestAngleDiff(
+                    currentAngle,
+                    desiredAngle
+                );
+
+            const float maxTurnRateDeg =
+                MathUtils::GetMaxTurnRateDegSec(
+                    kin.currentSpeedKnots,
+                    seeker.maxLateralGs
+                );
+
+            const float maxStep =
+                maxTurnRateDeg * deltaTime;
+
+            const float clampedStep =
+                std::clamp(angleDiff, -maxStep, maxStep);
+
+            const float newAngle =
+                currentAngle + clampedStep;
+
+            kin.headingVector.x =
+                std::cos(newAngle * DEG_TO_RAD);
+
+            kin.headingVector.y =
+                std::sin(newAngle * DEG_TO_RAD);
+        }
+
+        // An active radar seeker can keep searching after losing
+        // a lock. Semi-active guidance depends on the illuminator.
+        if (seeker.timeSinceLastCorrelation > DATALINK_TIMEOUT_SEC &&
+            seeker.type != SeekerType::ACTIVE_RADAR)
+        {
+            seeker.phase = GuidancePhase::INERTIAL_BLIND;
         }
     }
 
     void UpdateInertialGuidance(entt::registry& registry, entt::entity entity,
-            Transform2D& trans, Kinematics& kin, SeekerHead& seeker, float deltaTime) {
+            Transform2D& trans, Kinematics& kin, SeekerHead& seeker, float deltaTime)
+    {
         seeker.timeSinceLastCorrelation += deltaTime;
 
-        float distToTargetNM = MathUtils::GetDistance(trans.pos, seeker.targetPos);
+        const MathUtils::Vec2 predictedTargetPos =
+            MathUtils::ExtrapolatePosition(
+                seeker.targetPos,
+                seeker.targetVel,
+                seeker.timeSinceLastCorrelation
+            );
+
+        float distToTargetNM =
+            MathUtils::GetDistance(
+                trans.pos,
+                predictedTargetPos
+            );
 
         if (distToTargetNM > 0.001f) {
-            MathUtils::Vec2 desiredHeading = MathUtils::GetDirection(trans.pos,seeker.targetPos);
+            MathUtils::Vec2 desiredHeading = MathUtils::GetDirection(trans.pos,predictedTargetPos);
 
             float currentAngle = std::atan2(kin.headingVector.y, kin.headingVector.x) * RAD_TO_DEG;
             float desiredAngle = std::atan2(desiredHeading.y, desiredHeading.x) * RAD_TO_DEG;
@@ -440,69 +736,134 @@ namespace {
     }
 }
 
-    float Systems::PlanMissileAltitude(const Transform2D& trans, const Kinematics& kin,
-            const Aerodynamics& aero, const SeekerHead&seeker) {
-        float targetAlt = 0.0f;
-        if (seeker.hasLiveTarget) {
-            targetAlt = aero.cruiseAltitudeMeters < 100.0f ? 10000.0f : aero.cruiseAltitudeMeters;
+float Systems::PlanMissileAltitude(
+    const Transform2D& trans,
+    const Kinematics& kin,
+    const Aerodynamics& aero,
+    const SeekerHead& seeker)
+{
+    // No assigned target means there is no target altitude
+    // to guide toward.
+    if (seeker.targetGlobalTrackId == NO_GLOBAL_TRACK)
+        return trans.altitude;
 
-            float distToTargetNM = MathUtils::GetDistance(trans.pos, seeker.targetPos);
+    // Predict where the target should be vertically.
+    const float predictedTargetAltitude =
+        seeker.targetAltitude +
+        seeker.targetVerticalVelocityNMPerSec *
+        seeker.timeSinceLastCorrelation *
+        METERS_PER_NM;
 
-            if (distToTargetNM > 0.001f) {
-                MathUtils::Vec2 missileVel = MathUtils::GetVelocityNmPerSec(kin.headingVector, kin.currentSpeedKnots);
+    // Predict horizontal target position as well.
+    const MathUtils::Vec2 predictedTargetPos =
+        MathUtils::ExtrapolatePosition(
+            seeker.targetPos,
+            seeker.targetVel,
+            seeker.timeSinceLastCorrelation
+        );
 
-                float missileClosingSpeedNmSec = MathUtils::GetClosingSpeedNmPerSec(trans.pos, missileVel, seeker.targetPos);
-                float targetClosingSpeedNmSec = MathUtils::GetClosingSpeedNmPerSec(seeker.targetPos, seeker.targetVel, trans.pos);
+    // Initial altitude plan is the missile's cruise altitude.
+    float targetAlt =
+        aero.cruiseAltitudeMeters < 100.0f
+            ? 10000.0f
+            : aero.cruiseAltitudeMeters;
 
-                float combinedClosingSpeedNmSec = missileClosingSpeedNmSec + targetClosingSpeedNmSec;
+    const float distToTargetNM =
+        MathUtils::GetDistance(
+            trans.pos,
+            predictedTargetPos
+        );
 
-                if (combinedClosingSpeedNmSec > 0.0001f) {
-                    float timeToImpactSec = distToTargetNM / combinedClosingSpeedNmSec;
+    if (distToTargetNM > 0.001f)
+    {
+        const MathUtils::Vec2 missileVel =
+            MathUtils::GetVelocityNmPerSec(
+                kin.headingVector,
+                kin.currentSpeedKnots
+            );
 
-                    float altDiffMeters  = std::abs(seeker.targetAltitude - trans.altitude);
+        const float missileClosingSpeedNmSec =
+            MathUtils::GetClosingSpeedNmPerSec(
+                trans.pos,
+                missileVel,
+                predictedTargetPos
+            );
 
-                    float maxLateralAccelMps2 = seeker.maxLateralGs * GRAVITY_MPS2;
+        const float targetClosingSpeedNmSec =
+            MathUtils::GetClosingSpeedNmPerSec(
+                predictedTargetPos,
+                seeker.targetVel,
+                trans.pos
+            );
 
-                    float timeToDescendSec = 0.0f;
+        const float combinedClosingSpeedNmSec =
+            missileClosingSpeedNmSec +
+            targetClosingSpeedNmSec;
 
-                    if (maxLateralAccelMps2 > 0.0f) {
-                        float peakVerticalSpeedMps = std::sqrt(2.0f * maxLateralAccelMps2 * altDiffMeters);
+        if (combinedClosingSpeedNmSec > 0.0001f)
+        {
+            const float timeToImpactSec =
+                distToTargetNM / combinedClosingSpeedNmSec;
 
-                        peakVerticalSpeedMps = std::min(peakVerticalSpeedMps, kin.currentSpeedKnots * MPS_PER_KNOT);
+            const float altDiffMeters =
+                std::abs(
+                    predictedTargetAltitude - trans.altitude
+                );
 
-                        timeToDescendSec = peakVerticalSpeedMps / maxLateralAccelMps2;
-                    }
+            const float maxLateralAccelMps2 =
+                seeker.maxLateralGs * GRAVITY_MPS2;
 
-                    if (timeToImpactSec <= (timeToDescendSec + DESCENT_SAFETY_MARGIN_SEC)) {
-                        targetAlt = seeker.targetAltitude;
-                    }
+            float timeToDescendSec = 0.0f;
+
+            if (maxLateralAccelMps2 > 0.0f)
+            {
+                float peakVerticalSpeedMps =
+                    std::sqrt(
+                        2.0f *
+                        maxLateralAccelMps2 *
+                        altDiffMeters
+                    );
+
+                peakVerticalSpeedMps =
+                    std::min(
+                        peakVerticalSpeedMps,
+                        kin.currentSpeedKnots * MPS_PER_KNOT
+                    );
+
+                timeToDescendSec =
+                    peakVerticalSpeedMps /
+                    maxLateralAccelMps2;
+            }
+
+            if (timeToImpactSec <=
+                (timeToDescendSec + DESCENT_SAFETY_MARGIN_SEC))
+            {
+                targetAlt = predictedTargetAltitude;
+            }
+        }
+    }
+
+    return targetAlt;
+}
+
+void Systems::GuidanceSystem(entt::registry& registry, float deltaTime) {
+    auto view = registry.view<Transform2D, Kinematics>();
+    for (auto entity : view) {
+        auto& trans = view.get<Transform2D>(entity);
+        auto& kin = view.get<Kinematics>(entity);
+
+        if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
+            UpdateMissileGuidance(registry,entity,trans,kin, *seeker, deltaTime);
+            // Tell the physics what altitude to fly at (MovementSystem just obeys this number)
+            if (!registry.all_of<DeadTag>(entity)) {
+                if (auto* aero = registry.try_get<Aerodynamics>(entity)) {
+                    aero->desiredAltitudeMeters = PlanMissileAltitude(trans, kin, *aero, *seeker);
                 }
             }
         }
-        else {
-            targetAlt = trans.altitude;
-        }
 
-        return targetAlt;
-    }
-    void Systems::GuidanceSystem(entt::registry& registry, float deltaTime) {
-        auto view = registry.view<Transform2D, Kinematics>();
-        for (auto entity : view) {
-            auto& trans = view.get<Transform2D>(entity);
-            auto& kin = view.get<Kinematics>(entity);
-
-            if (auto* seeker = registry.try_get<SeekerHead>(entity)) {
-                UpdateMissileGuidance(registry,entity,trans,kin, *seeker, deltaTime);
-                // Tell the physics what altitude to fly at (MovementSystem just obeys this number)
-                if (!registry.all_of<DeadTag>(entity)) {
-                    if (auto* aero = registry.try_get<Aerodynamics>(entity)) {
-                        aero->desiredAltitudeMeters = PlanMissileAltitude(trans, kin, *aero, *seeker);
-                    }
-                }
-            }
-
-            if (auto* brain = registry.try_get<AutonomousGuidance>(entity)) {
-                UpdateShipGuidance(registry, entity, trans, kin, *brain, deltaTime);
-            }
+        if (auto* brain = registry.try_get<AutonomousGuidance>(entity)) {
+            UpdateShipGuidance(registry, entity, trans, kin, *brain, deltaTime);
         }
     }
+}

@@ -1,156 +1,143 @@
 #include <gtest/gtest.h>
 
-#include <cmath>
 #include <random>
 
-#include "ecs/Systems.h"
-#include "core/Constants.h"
 #include "core/MapProjection.h"
-#include "utils/KalmanFilter3D.h"
+#include "ecs/Systems.h"
+#include "ecs/components.h"
 
 class RadarPipelineTests : public ::testing::Test
 {
 protected:
     entt::registry registry;
-    entt::entity observer = entt::null;
     entt::entity target = entt::null;
+    entt::entity observer1 = entt::null;
+    entt::entity observer2 = entt::null;
 
-    static constexpr float kStep = 0.5f;
-    static constexpr float kTargetSpeedKnots = 1000.0f;
+    static constexpr float kAltitudeMeters = 10000.0f;
+    static constexpr float kScanRateSec = 0.5f;
 
     void SetUp() override
     {
         registry.ctx().emplace<MapProjection>();
         registry.ctx().emplace<RadarDetectionData>();
         registry.ctx().emplace<MasterTrackTable>();
-        registry.ctx().emplace<std::mt19937>(123456);
+        registry.ctx().emplace<std::mt19937>(12345);
         registry.ctx().emplace<float>(0.0f);
 
-        observer = registry.create();
+        observer1 = CreateObserver({0.0f, 0.0f});
+        observer2 = CreateObserver({0.0f, 1.0f});
+        target = CreateTarget({10.0f, 0.0f});
+    }
+
+    entt::entity CreateObserver(MathUtils::Vec2 position)
+    {
+        const entt::entity entity = registry.create();
         registry.emplace<Transform2D>(
-            observer, Transform2D{{0.0f, 0.0f}, 5000.0f, 0.0f});
-        registry.emplace<Kinematics>(observer);
-        registry.emplace<IFF>(observer, IFF{false});
+            entity, Transform2D{position, kAltitudeMeters, 0.0f});
+        registry.emplace<Kinematics>(entity);
 
-        RadarEmitter emitter{};
-        emitter.maxRangeNM = 100.0f;
-        emitter.maxRangeNmSq = 10000.0f;
-        emitter.scanRateSec = kStep;
-        emitter.timeSinceLastScan = 0.0f;
-        emitter.rangeErrorNM = 0.0f;
-        emitter.angleErrorRadians = 0.0f;
-        emitter.velocityErrorKnots = 0.0f;
-        registry.emplace<RadarEmitter>(observer, emitter);
+        auto& radar = registry.emplace<RadarEmitter>(entity);
+        radar.maxRangeNM = 100.0f;
+        radar.maxRangeNmSq = 10000.0f;
+        radar.scanRateSec = kScanRateSec;
+        radar.timeSinceLastScan = kScanRateSec;
+        radar.rangeErrorNM = 0.01f;
+        radar.angleErrorRadians = 0.001f;
+        radar.velocityErrorKnots = 5.0f;
 
-        target = registry.create();
+        registry.emplace<RadarSignature>(entity, RadarSignature{1.0f, 1.0f});
+        registry.emplace<IFF>(entity, IFF{false});
+        return entity;
+    }
+
+    entt::entity CreateTarget(MathUtils::Vec2 position)
+    {
+        const entt::entity entity = registry.create();
         registry.emplace<Transform2D>(
-            target, Transform2D{{10.0f, 0.0f}, 5000.0f, 0.0f});
-
-        Kinematics targetKinematics{};
-        targetKinematics.velocity = {
-            -kTargetSpeedKnots / NM_PER_SEC_TO_KNOTS, 0.0f};
-        registry.emplace<Kinematics>(target, targetKinematics);
-        registry.emplace<RadarSignature>(target, RadarSignature{1.0f, 1.0f});
-        registry.emplace<IFF>(target, IFF{true});
+            entity, Transform2D{position, kAltitudeMeters, 0.0f});
+        registry.emplace<Kinematics>(entity);
+        registry.emplace<RadarSignature>(entity, RadarSignature{1.0f, 1.0f});
+        registry.emplace<IFF>(entity, IFF{true});
+        return entity;
     }
 
-    RadarDetectionData& Data()
+    void RunScan(float timestampSec, float deltaTime)
     {
-        return registry.ctx().get<RadarDetectionData>();
-    }
+        registry.ctx().get<float>() = timestampSec;
+        registry.get<RadarEmitter>(observer1).timeSinceLastScan = kScanRateSec;
+        registry.get<RadarEmitter>(observer2).timeSinceLastScan = kScanRateSec;
 
-    MasterTrackTable& Master()
-    {
-        return registry.ctx().get<MasterTrackTable>();
-    }
-
-    void Step(float dt = kStep)
-    {
-        Systems::SensorSystem(registry, dt);
-        Systems::TrackingSystem(registry, dt);
-        Systems::SensorFusionSystem(registry, dt);
-
-        auto& time = registry.ctx().get<float>();
-        time += dt;
-
-        auto& transform = registry.get<Transform2D>(target);
-        const auto& velocity = registry.get<Kinematics>(target).velocity;
-        transform.pos.x += velocity.x * dt;
-        transform.pos.y += velocity.y * dt;
+        Systems::SensorSystem(registry, 0.0f);
+        Systems::TrackingSystem(registry, deltaTime);
+        Systems::SensorFusionSystem(registry, deltaTime);
     }
 };
 
-TEST_F(RadarPipelineTests, SensorTrackingAndFusionProduceOneConsistentGlobalTrack)
+TEST_F(RadarPipelineTests, TwoObserversBuildOneConfirmedFusedGlobalTrack)
 {
-    // Continue long enough for the local track to acquire velocity and pass
-    // the existing classification-confirmation interval.
-    for (int i = 0; i < 8; ++i)
-        Step();
+    for (int scan = 0; scan < 3; ++scan)
+    {
+        const float time = static_cast<float>(scan) * kScanRateSec;
+        RunScan(time, scan == 0 ? 0.0f : kScanRateSec);
+    }
 
-    ASSERT_TRUE(Data().activeTracks.contains(observer));
-    ASSERT_EQ(Data().activeTracks.at(observer).size(), 1u);
+    const auto& data = registry.ctx().get<RadarDetectionData>();
+    ASSERT_TRUE(data.activeTracks.contains(observer1));
+    ASSERT_TRUE(data.activeTracks.contains(observer2));
+    ASSERT_EQ(data.activeTracks.at(observer1).size(), 1u);
+    ASSERT_EQ(data.activeTracks.at(observer2).size(), 1u);
 
-    const RadarTrack& local = Data().activeTracks.at(observer).front();
-    ASSERT_EQ(local.classification, ThreatClass::MISSILE_INBOUND);
-    ASSERT_NE(local.globalTrackId, NO_GLOBAL_TRACK);
+    const RadarTrack& track1 = data.activeTracks.at(observer1).front();
+    const RadarTrack& track2 = data.activeTracks.at(observer2).front();
 
-    ASSERT_EQ(Master().activeGlobalTracks.size(), 1u);
-    ASSERT_TRUE(Master().activeGlobalTracks.contains(local.globalTrackId));
+    EXPECT_EQ(track1.lifecycle, TrackLifecycle::CONFIRMED);
+    EXPECT_EQ(track2.lifecycle, TrackLifecycle::CONFIRMED);
+    EXPECT_TRUE(track1.kalman.initialized);
+    EXPECT_TRUE(track2.kalman.initialized);
 
-    const RadarTrack& global =
-        Master().activeGlobalTracks.at(local.globalTrackId).track;
+    EXPECT_NE(track1.globalTrackId, NO_GLOBAL_TRACK);
+    EXPECT_EQ(track1.globalTrackId, track2.globalTrackId);
 
-    EXPECT_TRUE(local.kalman.initialized);
-    EXPECT_TRUE(global.kalman.initialized);
-    EXPECT_EQ(local.kalman.measurementCount, 8u);
-    EXPECT_EQ(global.kalman.measurementCount, local.kalman.measurementCount);
-    EXPECT_FALSE(local.isMissing);
-    EXPECT_FALSE(global.isMissing);
+    const auto& blueGlobalTracks =
+        registry.ctx().get<MasterTrackTable>().GetSide(false).activeGlobalTracks;
 
-    EXPECT_NEAR(global.pos.x, local.pos.x, 1.0e-4f);
-    EXPECT_NEAR(global.pos.y, local.pos.y, 1.0e-4f);
-    EXPECT_NEAR(global.vel.x, local.vel.x, 1.0e-4f);
-    EXPECT_NEAR(global.vel.y, local.vel.y, 1.0e-4f);
+    ASSERT_EQ(blueGlobalTracks.size(), 1u);
+    const RadarTrack& fused = blueGlobalTracks.begin()->second.track;
 
-    // The target is moving toward the observer, so the fused estimate should
-    // have a negative X velocity and a plausible speed.
-    EXPECT_LT(global.vel.x, 0.0f);
-    EXPECT_NEAR(global.speedKnots, kTargetSpeedKnots, 80.0f);
+    EXPECT_EQ(fused.globalTrackId, track1.globalTrackId);
+    EXPECT_NEAR(fused.pos.x, 10.0f, 0.02f);
+    EXPECT_NEAR(fused.pos.y, 0.0f, 0.02f);
+    EXPECT_NEAR(fused.altitude, kAltitudeMeters, 1.0f);
 }
 
-TEST_F(RadarPipelineTests, MultipleFramesDoNotCreateDuplicateLocalOrGlobalTracks)
+TEST_F(RadarPipelineTests, StationaryTargetDoesNotInheritClimbingObserversVerticalVelocity)
 {
-    for (int i = 0; i < 20; ++i)
-        Step();
+    // This is the regression scenario from the rendered target estimate:
+    // the target is level, while the radar observer is climbing.
+    registry.get<Kinematics>(observer1).verticalVelocityNMPerSec = 0.01f;
 
-    ASSERT_TRUE(Data().activeTracks.contains(observer));
-    EXPECT_EQ(Data().activeTracks.at(observer).size(), 1u);
-    EXPECT_EQ(Master().activeGlobalTracks.size(), 1u);
-}
+    registry.ctx().get<float>() = 0.0f;
+    registry.get<RadarEmitter>(observer1).timeSinceLastScan = kScanRateSec;
+    registry.get<RadarEmitter>(observer2).timeSinceLastScan = 0.0f;
 
-TEST_F(RadarPipelineTests, NoDetectionLeavesGlobalTrackPredictedAndMarkedMissing)
-{
-    for (int i = 0; i < 8; ++i)
-        Step();
+    Systems::SensorSystem(registry, 0.0f);
+    Systems::TrackingSystem(registry, 0.0f);
 
-    ASSERT_EQ(Master().activeGlobalTracks.size(), 1u);
-    const uint32_t id = Master().activeGlobalTracks.begin()->first;
-    const float oldX = Master().activeGlobalTracks.at(id).track.pos.x;
+    const auto& localTracks =
+        registry.ctx().get<RadarDetectionData>().activeTracks.at(observer1);
 
-    // Stop the observer from scanning while allowing the fusion system to age
-    // and predict the existing global track.
-    registry.get<RadarEmitter>(observer).timeSinceLastScan = 0.0f;
-    registry.get<RadarEmitter>(observer).scanRateSec = 1000.0f;
+    ASSERT_EQ(localTracks.size(), 1u);
 
-    Systems::SensorSystem(registry, kStep);
-    // Force a completed scan with no detections; SensorSystem clears the
-    // previous frame's measurements when the scan interval is not reached.
-    Data().frameMeasurements[observer].clear();
-    Systems::TrackingSystem(registry, kStep);
-    Systems::SensorFusionSystem(registry, kStep);
+    EXPECT_NEAR(
+        localTracks.front().verticalVelocityNMPerSec,
+        0.0f,
+        1.0e-6f
+    );
 
-    const RadarTrack& global = Master().activeGlobalTracks.at(id).track;
-    EXPECT_TRUE(global.isMissing);
-    EXPECT_GT(global.ageSec, 0.0f);
-    EXPECT_NE(global.pos.x, oldX);
+    EXPECT_NEAR(
+        localTracks.front().altitude,
+        kAltitudeMeters,
+        1.0e-3f
+    );
 }

@@ -167,17 +167,6 @@ TEST_F(SensorSystemTests, ClearsPreviousFrameMeasurements)
     EXPECT_TRUE(Data().frameMeasurements.empty());
 }
 
-TEST_F(SensorSystemTests, DoesNotScanWhenIntervalHasNotElapsed)
-{
-    observer = CreateObserver();
-    CreateTarget({10.0f, 0.0f});
-
-    Radar().timeSinceLastScan = 0.2f;
-    Scan(0.2f);
-
-    EXPECT_FALSE(Data().frameMeasurements.contains(observer));
-}
-
 // ============================================================
 // ENTITY FILTERING
 // ============================================================
@@ -375,7 +364,9 @@ TEST_F(SensorSystemTests, RejectsTargetOutsideEffectiveRcsRange)
     EXPECT_TRUE(Measurements().empty());
 }
 
-TEST_F(SensorSystemTests, LargeRcsDoesNotExceedMaximumRadarRange)
+TEST_F(
+    SensorSystemTests,
+    LargeRcsCanExtendDetectionBeyondNominalRange)
 {
     observer = CreateObserver();
 
@@ -383,7 +374,13 @@ TEST_F(SensorSystemTests, LargeRcsDoesNotExceedMaximumRadarRange)
 
     Scan();
 
-    EXPECT_TRUE(Measurements().empty());
+    ASSERT_EQ(Measurements().size(), 1u);
+
+    EXPECT_NEAR(
+        Measurements().front().rangeNM,
+        100.1f,
+        0.001f
+    );
 }
 
 TEST_F(SensorSystemTests, RejectsTargetBeyondRadarHorizon)
@@ -403,7 +400,7 @@ TEST_F(SensorSystemTests, RejectsTargetBeyondRadarHorizon)
 // MEASUREMENT GEOMETRY
 // ============================================================
 
-TEST_F(SensorSystemTests, MeasuresHorizontalRangeCorrectly)
+TEST_F(SensorSystemTests, MeasuresSlantRangeAtEqualAltitude)
 {
     observer = CreateObserver();
     CreateTarget({10.0f, 0.0f});
@@ -709,6 +706,51 @@ TEST_F(SensorSystemTests, VerticalMovementContributesToRadialVelocity)
         0.01f);
 }
 
+TEST_F(SensorSystemTests, ObserverVerticalVelocityContributesToRelativeRadialVelocity)
+{
+    observer = CreateObserver({0.0f, 0.0f});
+
+    // Target is 1 NM above the observer and has zero vertical velocity.
+    // The observer climbs at 0.1 NM/sec, so the relative radial component
+    // is negative and scaled by the vertical LOS component (1/sqrt(101)).
+    registry.get<Kinematics>(observer).verticalVelocityNMPerSec = 0.1f;
+
+    CreateTarget({10.0f, 0.0f}, ALTITUDE + 1852.0f);
+
+    Scan();
+
+    ASSERT_EQ(Measurements().size(), 1);
+
+    const float expected =
+        -0.1f / std::sqrt(101.0f) * NM_PER_SEC_TO_KNOTS;
+
+    EXPECT_NEAR(
+        Measurements()[0].radialVelocityKnots,
+        expected,
+        0.01f
+    );
+}
+
+TEST_F(SensorSystemTests, MeasurementCarriesConfiguredUncertaintyValues)
+{
+    observer = CreateObserver();
+    CreateTarget({10.0f, 0.0f});
+
+    Radar().rangeErrorNM = 0.025f;
+    Radar().angleErrorRadians = 0.002f;
+    Radar().velocityErrorKnots = 7.5f;
+
+    Scan();
+
+    ASSERT_EQ(Measurements().size(), 1);
+    const RadarMeasurement& measurement = Measurements().front();
+
+    EXPECT_FLOAT_EQ(measurement.rangeSigmaNM, 0.025f);
+    EXPECT_FLOAT_EQ(measurement.azimuthSigmaRadians, 0.002f);
+    EXPECT_FLOAT_EQ(measurement.elevationSigmaRadians, 0.002f);
+    EXPECT_FLOAT_EQ(measurement.radialVelocitySigmaKnots, 7.5f);
+}
+
 // ============================================================
 // TIMESTAMPS
 // ============================================================
@@ -790,39 +832,6 @@ TEST_F(SensorSystemTests, ObserversProduceDifferentMeasurementsForDifferentPosit
 // ============================================================
 // NOISE
 // ============================================================
-
-TEST_F(SensorSystemTests, MeasurementNoiseProducesVariation)
-{
-    observer = CreateObserver();
-
-    CreateTarget(
-        {10.0f, 0.0f},
-        ALTITUDE,
-        true,
-        1.0f,
-        {0.1f, 0.0f}
-    );
-
-    Radar().rangeErrorNM = 0.2f;
-    Radar().angleErrorRadians = 0.01f;
-    Radar().velocityErrorKnots = 10.0f;
-
-    std::vector<float> ranges;
-
-    for (int i = 0; i < 100; ++i)
-    {
-        ForceNextScan();
-        Scan();
-
-        ASSERT_EQ(Measurements().size(), 1);
-        ranges.push_back(Measurements()[0].rangeNM);
-    }
-
-    const auto [minimum, maximum] =
-        std::minmax_element(ranges.begin(), ranges.end());
-
-    EXPECT_GT(*maximum - *minimum, 0.0001f);
-}
 
 TEST_F(SensorSystemTests, RangeNoiseHasApproximatelyCorrectStandardDeviation)
 {

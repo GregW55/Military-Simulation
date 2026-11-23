@@ -85,9 +85,10 @@ if(BUILD_TESTING)
             tests/SensorSystemTests.cpp
             tests/TrackingSystemTests.cpp
             tests/SensorFusionSystemTests.cpp
-            tests/TrackCorrelationTests.cpp
             tests/KalmanFilter3DTests.cpp
+            tests/TrackFusionTests.cpp
             tests/RadarPipelineTests.cpp
+            tests/MissileGuidanceTests.cpp
 
             src/ecs/systems/radar/SensorSystem.cpp
             src/ecs/systems/radar/TrackingSystem.cpp
@@ -96,6 +97,8 @@ if(BUILD_TESTING)
             src/utils/MathUtils.cpp
             src/utils/KalmanFilter3D.cpp
             src/utils/TrackFusion.h
+            src/ecs/Systems.cpp
+            src/ecs/systems/GuidanceSystem.cpp
     )
 
     target_include_directories(RadarSystemTests PRIVATE

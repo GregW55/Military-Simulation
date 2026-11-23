@@ -111,7 +111,9 @@ namespace {
             0.0f, // Time since last correlation
             0.0f, // Time since launch (seconds)
             mStats.maxLateralGs,
-            true
+            true,
+            target.verticalVelocityNMPerSec,
+            target.lastMeasurementTimeSec
             );
 
         registry.emplace<Transform2D>(missile,

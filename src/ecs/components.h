@@ -352,6 +352,10 @@ struct SeekerHead {
     float timeSinceLaunchSec = 0.0f;
     float maxLateralGs = 0.0f;
     bool hasLiveTarget = true;
+    float targetVerticalVelocityNMPerSec = 0.0f;
+
+    // Timestamp of the most recent target measurement accepted by this missiles guidance computer
+    float lastTargetMeasurementTimeSec = -1.0f;
 };
 
 struct AutonomousGuidance {

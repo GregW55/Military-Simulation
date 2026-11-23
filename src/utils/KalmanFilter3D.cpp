@@ -10,6 +10,7 @@ namespace
 {
     constexpr int STATE_SIZE = 6;
     constexpr int MEASUREMENT_SIZE = 4;
+    constexpr float MIN_RADIAL_VELOCITY_SIGMA_KNOTS = 1.0f;
 
     constexpr float ACCELERATION_NOISE_NM_S2 = 0.05f;
     constexpr float MIN_RANGE_NM = 0.0001f;
@@ -312,7 +313,7 @@ bool KalmanFilter3D::CalculateInnovation(
         Square(std::max(0.000001f, measurement.rangeSigmaNM)),
         Square(std::max(0.000001f, measurement.azimuthSigmaRadians)),
         Square(std::max(0.000001f, measurement.elevationSigmaRadians)),
-        Square(std::max(0.001f, measurement.radialVelocitySigmaKnots))
+        Square(std::max(MIN_RADIAL_VELOCITY_SIGMA_KNOTS, measurement.radialVelocitySigmaKnots))
     };
 
     // --------------------------------------------------------
@@ -487,16 +488,24 @@ void KalmanFilter3D::Initialize(
     // Initialize the observable radial component and retain large
     // uncertainty in velocity until subsequent observations arrive.
     const float radialVelocity =
-        measurement.radialVelocityKnots / NM_PER_SEC_TO_KNOTS;
+    measurement.radialVelocityKnots / NM_PER_SEC_TO_KNOTS;
 
-    state.x[3] =
-        observerState.velocity[0] + radialVelocity * losX;
+    // Observer velocity projected onto the radar line of sight.
+    const float observerRadialVelocity =
+        observerState.velocity[0] * losX +
+        observerState.velocity[1] * losY +
+        observerState.velocity[2] * losZ;
 
-    state.x[4] =
-        observerState.velocity[1] + radialVelocity * losY;
+    // Convert relative radial velocity into absolute target
+    // radial velocity.
+    const float targetRadialVelocity =
+        radialVelocity + observerRadialVelocity;
 
-    state.x[5] =
-        observerState.velocity[2] + radialVelocity * losZ;
+    // Initialize only the observable radial component.
+    // Do NOT add the observer's complete velocity vector.
+    state.x[3] = targetRadialVelocity * losX;
+    state.x[4] = targetRadialVelocity * losY;
+    state.x[5] = targetRadialVelocity * losZ;
 
     // --------------------------------------------------------
     // 1. Get the measurement's standard deviations.
@@ -512,8 +521,7 @@ void KalmanFilter3D::Initialize(
         std::max(0.000001f, measurement.elevationSigmaRadians);
 
     const float radialVelocitySigma =
-        std::max(0.001f, measurement.radialVelocitySigmaKnots)
-        / NM_PER_SEC_TO_KNOTS;
+        std::max(MIN_RADIAL_VELOCITY_SIGMA_KNOTS, measurement.radialVelocitySigmaKnots) / NM_PER_SEC_TO_KNOTS;
 
 
     // --------------------------------------------------------
