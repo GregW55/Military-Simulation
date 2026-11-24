@@ -17,6 +17,18 @@ protected:
     static constexpr float kAltitudeMeters = 10000.0f;
     static constexpr float kScanRateSec = 0.5f;
 
+    static constexpr float kElevationSigmaRadians = 0.001f;
+
+    // Observer 2 is approximately sqrt(101) NM from the target.
+    static constexpr float kMaxTestRangeNM = 10.05f;
+
+    // Allow three standard deviations of elevation measurement error.
+    static constexpr float kAltitudeToleranceMeters =
+        3.0f *
+        kMaxTestRangeNM *
+        METERS_PER_NM *
+        kElevationSigmaRadians;
+
     void SetUp() override
     {
         registry.ctx().emplace<MapProjection>();
@@ -43,7 +55,7 @@ protected:
         radar.scanRateSec = kScanRateSec;
         radar.timeSinceLastScan = kScanRateSec;
         radar.rangeErrorNM = 0.01f;
-        radar.angleErrorRadians = 0.001f;
+        radar.angleErrorRadians = kElevationSigmaRadians;
         radar.velocityErrorKnots = 5.0f;
 
         registry.emplace<RadarSignature>(entity, RadarSignature{1.0f, 1.0f});
@@ -108,7 +120,7 @@ TEST_F(RadarPipelineTests, TwoObserversBuildOneConfirmedFusedGlobalTrack)
     EXPECT_EQ(fused.globalTrackId, track1.globalTrackId);
     EXPECT_NEAR(fused.pos.x, 10.0f, 0.02f);
     EXPECT_NEAR(fused.pos.y, 0.0f, 0.02f);
-    EXPECT_NEAR(fused.altitude, kAltitudeMeters, 1.0f);
+    EXPECT_NEAR(fused.altitude, kAltitudeMeters, kAltitudeToleranceMeters);
 }
 
 TEST_F(RadarPipelineTests, StationaryTargetDoesNotInheritClimbingObserversVerticalVelocity)
@@ -116,6 +128,13 @@ TEST_F(RadarPipelineTests, StationaryTargetDoesNotInheritClimbingObserversVertic
     // This is the regression scenario from the rendered target estimate:
     // the target is level, while the radar observer is climbing.
     registry.get<Kinematics>(observer1).verticalVelocityNMPerSec = 0.01f;
+
+    // Disable measurement noise for this isolated initialization test.
+    auto& testRadar = registry.get<RadarEmitter>(observer1);
+
+    testRadar.rangeErrorNM = 0.0f;
+    testRadar.angleErrorRadians = 0.0f;
+    testRadar.velocityErrorKnots = 0.0f;
 
     registry.ctx().get<float>() = 0.0f;
     registry.get<RadarEmitter>(observer1).timeSinceLastScan = kScanRateSec;
