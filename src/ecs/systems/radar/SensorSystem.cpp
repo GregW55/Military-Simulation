@@ -22,8 +22,8 @@ namespace
         const Transform2D &targetTransform,
         const Kinematics& targetKinematics,
         const RadarSignature &targetRadarSignature,
-        float timestampSec,
-        std::mt19937& rng)
+        const float timestampSec,
+        std::mt19937& seed)
     {
         // ------------------------------------------------
         //  Calculate relative horizontal position
@@ -135,16 +135,16 @@ namespace
 
         // Generate noise only when the configured standard deviation is positive.
         const float rangeNoiseValue =
-            rangeError > 0.0f ? rangeNoise(rng) : 0.0f;
+            rangeError > 0.0f ? rangeNoise(seed) : 0.0f;
 
         const float azimuthNoiseValue =
-            angleError > 0.0f ? angleNoise(rng) : 0.0f;
+            angleError > 0.0f ? angleNoise(seed) : 0.0f;
 
         const float elevationNoiseValue =
-            angleError > 0.0f ? angleNoise(rng) : 0.0f;
+            angleError > 0.0f ? angleNoise(seed) : 0.0f;
 
         const float velocityNoiseValue =
-            velocityError > 0.0f ? velocityNoise(rng) : 0.0f;
+            velocityError > 0.0f ? velocityNoise(seed) : 0.0f;
 
         // Construct measurement.
         RadarMeasurement measurement{};
@@ -176,7 +176,7 @@ void Systems::SensorSystem(entt::registry& registry, const float deltaTime)
 {
     const auto& map = registry.ctx().get<MapProjection>();
     auto& detectionData = registry.ctx().get<RadarDetectionData>();
-    auto& rng = registry.ctx().get<std::mt19937>();
+    auto& seed = registry.ctx().get<std::mt19937>();
 
     const float timestampSec = registry.ctx().get<float>();
 
@@ -222,7 +222,7 @@ void Systems::SensorSystem(entt::registry& registry, const float deltaTime)
                 targetKinematics,
                 targetRadarSignature,
                 timestampSec,
-                rng
+                seed
             );
 
             if (measurement.has_value()) measurements.push_back(*measurement);

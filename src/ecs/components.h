@@ -44,7 +44,9 @@ enum class ThreatClass {
 enum class TrackLifecycle {
     TENTATIVE,          // Newly detected; not yet sufficiently confirmed
     CONFIRMED,          // Sufficient detections to establish a real track
-    COASTING            // Previously confirmed, but currently not detected
+    COASTING,           // Previously confirmed, but currently not detected
+    MISSING,            // Continue to predict its location and locate it, assume complete loss of radar
+    DESTROYED           // Track has been destroyed, no longer need to predict/target
 };
 
 // ==============================

@@ -26,21 +26,14 @@ namespace {
         std::vector<char> trackUsed;
     };
 
-    constexpr size_t TRACK_CONFIRM_WINDOW = 5;
-    constexpr size_t TRACK_CONFIRM_HITS = 3;
 
     void RecordScanResult(
-    RadarTrack& track,
-    bool hit)
+        RadarTrack& track,
+        bool hit)
     {
-        track.recentScanHits[track.scanHistoryNext] =
-            hit ? 1 : 0;
+        track.recentScanHits[track.scanHistoryNext] = hit ? 1 : 0;
 
-        track.scanHistoryNext =
-            static_cast<uint8_t>(
-                (track.scanHistoryNext + 1) %
-                TRACK_CONFIRM_WINDOW
-            );
+        track.scanHistoryNext = static_cast<uint8_t>((track.scanHistoryNext + 1) % TRACK_CONFIRM_WINDOW);
 
         if (track.scanHistoryCount < TRACK_CONFIRM_WINDOW)
             ++track.scanHistoryCount;
@@ -52,7 +45,7 @@ namespace {
 
             // A previously confirmed track resumes confirmation
             // immediately after a successful reacquisition.
-            if (track.lifecycle == TrackLifecycle::COASTING)
+            if (track.lifecycle == TrackLifecycle::COASTING || track.lifecycle == TrackLifecycle::MISSING)
             {
                 track.lifecycle = TrackLifecycle::CONFIRMED;
                 return;
@@ -66,29 +59,25 @@ namespace {
                     ++hitCount;
             }
 
-            if (track.lifecycle == TrackLifecycle::TENTATIVE &&
-                hitCount >= TRACK_CONFIRM_HITS)
-            {
+            if (track.lifecycle == TrackLifecycle::TENTATIVE && hitCount >= TRACK_CONFIRM_HITS)
                 track.lifecycle = TrackLifecycle::CONFIRMED;
-            }
         }
         else
         {
             track.isMissing = true;
 
-            if (track.missedScanCount <
-                std::numeric_limits<uint8_t>::max())
-            {
+            if (track.missedScanCount < std::numeric_limits<uint8_t>::max())
                 ++track.missedScanCount;
-            }
 
             if (track.lifecycle == TrackLifecycle::CONFIRMED)
                 track.lifecycle = TrackLifecycle::COASTING;
+
+            if (track.missedScanCount >= TRACK_MAX_MISSED_SCANS && track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC)
+                track.lifecycle = TrackLifecycle::MISSING;
         }
     }
 
-    std::vector<int> SolveHungarian(
-        const std::vector<std::vector<double>>& cost)
+    std::vector<int> SolveHungarian(const std::vector<std::vector<double>>& cost)
     {
         const size_t n = cost.size();
 
@@ -126,8 +115,7 @@ namespace {
 
                 const size_t i0 = p[j0];
 
-                double delta =
-                    std::numeric_limits<double>::infinity();
+                double delta = std::numeric_limits<double>::infinity();
 
                 size_t j1 = 0;
 
@@ -136,10 +124,7 @@ namespace {
                     if (used[j])
                         continue;
 
-                    const double current =
-                        cost[i0 - 1][j - 1] -
-                        u[i0] -
-                        v[j];
+                    const double current = cost[i0 - 1][j - 1] - u[i0] - v[j];
 
                     if (current < minv[j])
                     {

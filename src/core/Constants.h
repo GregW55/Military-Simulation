@@ -74,6 +74,9 @@ constexpr float MAX_PLAUSIBLE_VEL_CHANGE_KNOTS = 800.0f;
 constexpr float TRACK_DELETION_TIMEOUT_SEC = 10.0f;                     // Removed entirely after unrefreshed
 constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 3.0f;                  // Must be fresher than this to engage/lock
 constexpr float TRACK_MIN_ACTIONABLE_AGE_SEC = 0.0001f;
+constexpr size_t TRACK_CONFIRM_WINDOW = 5;      // Window of previous tracks
+constexpr size_t TRACK_CONFIRM_HITS = 3;        // How many hits in the window are needed (3/5)
+constexpr size_t TRACK_MAX_MISSED_SCANS = 3;    // Track not hit by radar 3x consecutively; mark as missing
 
 constexpr float MIN_OBSERVATION_TIME_SEC = 1.0f;
 constexpr float MAX_TTI_FOR_SECOND_SHOT_SEC = 30.0f;
