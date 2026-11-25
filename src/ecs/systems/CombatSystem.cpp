@@ -214,6 +214,12 @@ namespace {
             result.status = EngagementStatus::TrackUnconfirmed;
             return result;
         }
+
+        if (threat.lifecycle != TrackLifecycle::CONFIRMED) {
+            result.status = EngagementStatus::TrackUnconfirmed;
+            return result;
+        }
+
         if (threat.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC) {
             result.status = EngagementStatus::TrackStale;
             return result;

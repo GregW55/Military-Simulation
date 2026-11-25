@@ -77,7 +77,7 @@ constexpr float TRACK_MIN_ACTIONABLE_AGE_SEC = 0.0001f;
 
 constexpr float MIN_OBSERVATION_TIME_SEC = 1.0f;
 constexpr float MAX_TTI_FOR_SECOND_SHOT_SEC = 30.0f;
-constexpr uint8_t MAX_SHOTS_PER_THREAT = 2;
+constexpr uint8_t MAX_SHOTS_PER_THREAT = 1;
 constexpr float MIN_AMMO_RESERVE_RATIO = 0.15f;                         // ~15% max ammo reserved for incoming missiles
 
 // Initial four-degree-of-freedom chi-square threshold at approximately 99% confidence.
