@@ -31,6 +31,9 @@ namespace {
         RadarTrack& track,
         bool hit)
     {
+        if (track.lifecycle == TrackLifecycle::DESTROYED)
+            return;
+
         track.recentScanHits[track.scanHistoryNext] = hit ? 1 : 0;
 
         track.scanHistoryNext = static_cast<uint8_t>((track.scanHistoryNext + 1) % TRACK_CONFIRM_WINDOW);
@@ -41,7 +44,6 @@ namespace {
         if (hit)
         {
             track.missedScanCount = 0;
-            track.isMissing = false;
 
             // A previously confirmed track resumes confirmation
             // immediately after a successful reacquisition.
@@ -64,8 +66,6 @@ namespace {
         }
         else
         {
-            track.isMissing = true;
-
             if (track.missedScanCount < std::numeric_limits<uint8_t>::max())
                 ++track.missedScanCount;
 
@@ -290,7 +290,6 @@ namespace {
 
         track.ageSec = 0.0f;
         track.lastMeasurementTimeSec = measurement.timestampSec;
-        track.isMissing = false;
 
         // --------------------------------------------------------
         // Recalculate observer-relative threat information.
@@ -418,7 +417,6 @@ namespace {
 
         track.ageSec = 0.0f;
         track.lastMeasurementTimeSec = measurement.timestampSec;
-        track.isMissing = false;
         track.hasVelocity = false;
 
         track.speedKnots = 0.0f;

@@ -24,7 +24,6 @@ inline RadarTrack MakeLocalTrack(
     bool hasVelocity = true,
     uint32_t globalId = NO_GLOBAL_TRACK,
     float ageSec = 0.0f,
-    bool missing = false,
     float altitudeMeters = 30.0f)
 {
     RadarTrack track{};
@@ -34,7 +33,6 @@ inline RadarTrack MakeLocalTrack(
     track.vel = velocity;
     track.altitude = altitudeMeters;
     track.ageSec = ageSec;
-    track.isMissing = missing;
     track.classification = classification;
     track.hasVelocity = hasVelocity;
     track.speedKnots = MathUtils::NmPerSecToKnots(MathUtils::Length(velocity));
@@ -66,7 +64,6 @@ inline RadarTrack MakeInitializedTrack(
     track.ageSec = 0.0f;
     track.lastMeasurementTimeSec = timestampSec;
     track.hasVelocity = hasVelocity;
-    track.isMissing = false;
     track.lifecycle = TrackLifecycle::CONFIRMED;
     track.classification = classification;
     track.speedKnots = MathUtils::NmPerSecToKnots(MathUtils::Length(velocity));

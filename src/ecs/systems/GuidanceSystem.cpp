@@ -37,16 +37,12 @@ namespace {
             // 2. TRACK QUALITY
             // ========================================================
 
-            if (track.lifecycle != TrackLifecycle::CONFIRMED)
-                continue;
-
-            if (track.isMissing)
+            if (track.lifecycle == TrackLifecycle::MISSING ||
+                track.lifecycle == TrackLifecycle::DESTROYED ||
+                track.lifecycle == TrackLifecycle::TENTATIVE)
                 continue;
 
             if (!track.hasVelocity)
-                continue;
-
-            if (track.ageSec > TRACK_ACTIONABLE_FRESHNESS_SEC)
                 continue;
 
             // ========================================================

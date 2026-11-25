@@ -159,7 +159,7 @@ struct RadarTrack {
     float ageSec = 0.0f;                    // Seconds since the last successful radar measurement
     float lastMeasurementTimeSec = 0.0f;    // Time of the most recent successful measurement
     bool hasVelocity = false;               // True after the filter has received at least two measurements
-    bool isMissing = false;
+
 
     // Calculated kinematic/threat information.
     float speedKnots = 0.0f;
