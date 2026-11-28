@@ -78,6 +78,7 @@ void Renderer::Init(const ScenarioData& scenario) {
     (void)scenario;
     InitWindow(1920, 1080, "AEGIS - TAIWAN THEATER");
     SetTargetFPS(targetFPS);
+    LoadUnitModels();
 
     // Default far plane (~1000) is too short to see an 840 NM box. If this line does not compile, see the CMake note.
     rlSetClipPlanes(1.0, 4000.0);
@@ -89,7 +90,25 @@ void Renderer::Init(const ScenarioData& scenario) {
 
 void Renderer::Shutdown() {
     UnloadTerrain();
+    UnloadUnitModels();
     CloseWindow();
+}
+
+void Renderer::LoadUnitModels() {
+    shipModels["ARLEIGH_BURKE"] = LoadModel("../assets/models/ships/arleigh_burke.glb");
+    shipModels["TYPE_055"] = LoadModel("../assets/models/ships/type_055.glb");
+    missileModels["SM_6"] = LoadModel("../assets/models/missiles/heatseeker_air-air_missile.glb");
+    missileModels["SM_2"] = LoadModel("../assets/models/missiles/heatseeker_air-air_missile.glb");
+    missileModels["TOMAHAWK"] = LoadModel("../assets/models/missiles/air-to-ground_missile.glb");
+    missileModels["YJ_18"] = LoadModel("../assets/models/missiles/air-to-ground_missile.glb");
+}
+
+void Renderer::UnloadUnitModels() {
+    for (auto& [id, model] : shipModels)
+        UnloadModel(model);
+
+    for (auto& [id, model] : missileModels)
+        UnloadModel(model);
 }
 
 bool Renderer::ShouldClose() { return WindowShouldClose(); }
@@ -270,24 +289,28 @@ void Renderer::ProcessInput() {
                         camTarget.z + camDist * cosf(camPitch) * cosf(camYaw) };
 }
 
-void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario) {
+void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario)
+{
     UpdateChunkLods();
     BeginDrawing();
     ClearBackground({ 10, 20, 30, 255 });
 
     const auto& map = registry.ctx().get<MapProjection>();
     const Vector2 mouse = GetMousePosition();
-    const float markerR = camDist * 0.004f;                  // markers stay readable at any zoom
+    const float markerR = camDist * 0.004f;
 
     struct Label { Vector2 at; std::string text; Color color; };
-    std::vector<Label> labels;                               // text can't be drawn in 3D mode, so collect it
+    std::vector<Label> labels;
 
     BeginMode3D(camera);
 
-    for (const auto& c : chunks) DrawModel(c.model, {0.0f, 0.0f, 0.0f}, 1.0f, WHITE);
+    for (const auto& c : chunks)
+        DrawModel(c.model, { 0.0f, 0.0f, 0.0f }, 1.0f, WHITE);
 
     auto renderView = registry.view<Transform2D, IFF>();
-    for (auto entity : renderView) {
+
+    for (auto entity : renderView)
+    {
         const auto& tf  = renderView.get<Transform2D>(entity);
         const auto& iff = renderView.get<IFF>(entity);
         const auto* kin = registry.try_get<Kinematics>(entity);
@@ -298,57 +321,210 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
         const Vector2 scr    = GetWorldToScreen(pos, camera);
         const bool hovered   = Vector2Distance(scr, mouse) < 12.0f;
 
-        DrawLine3D(pos, ground, Fade(col, 0.35f));           // altitude stalk: height above the terrain
+        DrawLine3D(pos, ground, Fade(col, 0.35f));
 
-        if (!registry.all_of<Warhead>(entity)) {
-            DrawSphere(pos, markerR, col);
+        // =========================================================
+        // SHIPS / AIRCRAFT
+        // =========================================================
+        if (!registry.all_of<Warhead>(entity))
+        {
+            bool modelDrawn = false;
 
-            if (hovered && kin) {
-                std::string tip = TextFormat("Alt: %.0fm\nSpd: %.1f kts", tf.altitude, kin->currentSpeedKnots);
-                if (const auto* mag = registry.try_get<Magazine>(entity)) {
-                    std::vector<std::pair<std::string, int>> ammo(mag->currentAmmo.begin(), mag->currentAmmo.end());
-                    std::sort(ammo.begin(), ammo.end());
-                    tip += "\nAmmo:";
-                    for (const auto& [weaponId, count] : ammo) tip += TextFormat("\n  %s: %d", weaponId.c_str(), count);
+            if (const auto* visual = registry.try_get<VisualIdentity>(entity))
+            {
+                const auto modelIt = shipModels.find(visual->modelId);
+
+                if (modelIt != shipModels.end())
+                {
+                    const float heading = kin
+                        ? atan2f(kin->headingVector.x, -kin->headingVector.y) * RAD2DEG
+                        : 0.0f;
+
+                    const float scale = visual->modelScale * 0.01f;
+
+                    DrawModelEx(
+                        modelIt->second,
+                        pos,
+                        { 0.0f, 1.0f, 0.0f },
+                        heading,
+                        { scale, scale * kVertExag, scale },
+                        WHITE
+                    );
+
+                    modelDrawn = true;
                 }
-                labels.push_back({{scr.x + 10.0f, scr.y - 20.0f}, tip, GREEN});
             }
 
-            if (const auto* radar = registry.try_get<RadarEmitter>(entity)) {
-                if (showRadarRings || hovered) {
+            // Keep the original marker as a fallback if no model is available.
+            if (!modelDrawn)
+                DrawSphere(pos, markerR, col);
+
+            if (hovered && kin)
+            {
+                std::string tip = TextFormat(
+                    "Alt: %.0fm\nSpd: %.1f kts",
+                    tf.altitude,
+                    kin->currentSpeedKnots
+                );
+
+                if (const auto* mag = registry.try_get<Magazine>(entity))
+                {
+                    std::vector<std::pair<std::string, int>> ammo(
+                        mag->currentAmmo.begin(),
+                        mag->currentAmmo.end()
+                    );
+
+                    std::sort(ammo.begin(), ammo.end());
+
+                    tip += "\nAmmo:";
+
+                    for (const auto& [weaponId, count] : ammo)
+                        tip += TextFormat("\n  %s: %d", weaponId.c_str(), count);
+                }
+
+                labels.push_back({
+                    { scr.x + 10.0f, scr.y - 20.0f },
+                    tip,
+                    GREEN
+                });
+            }
+
+            if (const auto* radar = registry.try_get<RadarEmitter>(entity))
+            {
+                if (showRadarRings || hovered)
+                {
                     auto sigTargets = registry.view<Transform2D, RadarSignature, IFF>();
                     entt::entity nearest = entt::null;
                     float nearestDistSq = std::numeric_limits<float>::max();
-                    for (auto target : sigTargets) {
-                        if (sigTargets.get<IFF>(target).isHostile == iff.isHostile) continue;
-                        const float d = MathUtils::GetDistanceSq(tf.pos, sigTargets.get<Transform2D>(target).pos);
-                        if (d < nearestDistSq) { nearestDistSq = d; nearest = target; }
+
+                    for (auto target : sigTargets)
+                    {
+                        if (sigTargets.get<IFF>(target).isHostile == iff.isHostile)
+                            continue;
+
+                        const float d = MathUtils::GetDistanceSq(
+                            tf.pos,
+                            sigTargets.get<Transform2D>(target).pos
+                        );
+
+                        if (d < nearestDistSq)
+                        {
+                            nearestDistSq = d;
+                            nearest = target;
+                        }
                     }
-                    if (registry.valid(nearest)) {
+
+                    if (registry.valid(nearest))
+                    {
                         const auto& tgtTf  = sigTargets.get<Transform2D>(nearest);
                         const auto& tgtSig = sigTargets.get<RadarSignature>(nearest);
+
                         const float effectiveRangeNM = std::min(
                             radar->maxRangeNM * tgtSig.rcsFourthRoot,
-                            MathUtils::GetRadarHorizonNM(tf.altitude) + MathUtils::GetRadarHorizonNM(tgtTf.altitude));
+                            MathUtils::GetRadarHorizonNM(tf.altitude) +
+                            MathUtils::GetRadarHorizonNM(tgtTf.altitude)
+                        );
 
-                        DrawCircle3D(pos, effectiveRangeNM, {1.0f, 0.0f, 0.0f}, 90.0f, Fade(GREEN, 0.6f));  // radius is already NM
-                        labels.push_back({{scr.x + 10.0f, scr.y - 40.0f},
-                            TextFormat("Eff. range vs nearest contact: %.1f nm", effectiveRangeNM), GREEN});
+                        DrawCircle3D(
+                            pos,
+                            effectiveRangeNM,
+                            { 1.0f, 0.0f, 0.0f },
+                            90.0f,
+                            Fade(GREEN, 0.6f)
+                        );
+
+                        labels.push_back({
+                            { scr.x + 10.0f, scr.y - 40.0f },
+                            TextFormat(
+                                "Eff. range vs nearest contact: %.1f nm",
+                                effectiveRangeNM
+                            ),
+                            GREEN
+                        });
                     }
                 }
             }
-        } else {
-            DrawSphere(pos, markerR * 0.6f, col);
-            if (kin) {
-                const MathUtils::Vec2 tailNM = MathUtils::Sub(tf.pos, MathUtils::Scale(kin->headingVector, 0.5f));
-                DrawLine3D(pos, ToRender(tailNM, tf.altitude), ORANGE);   // flame trail
+        }
+
+        // =========================================================
+        // MISSILES / WARHEADS
+        // =========================================================
+        else
+        {
+            bool modelDrawn = false;
+
+            if (const auto* warhead = registry.try_get<Warhead>(entity))
+            {
+                const auto modelIt = missileModels.find(warhead->weaponId);
+
+                if (modelIt != missileModels.end())
+                {
+                    Vector3 modelForward;
+
+                    if (modelIt->first == "SM_6" || modelIt->first == "SM_2") {
+                        modelForward = {1.0f, 0.0f, 0.0f };
+                    }
+                    else modelForward = {-1.0f, 0.0f, 0.0f };
+
+                    const Vector3 direction = Vector3Normalize({
+                        -kin->headingVector.x,
+                        -kin->verticalVelocityNMPerSec,
+                        -kin->headingVector.y
+                    });
+
+                    const float scale = 0.075f;
+
+                    const Vector3 rotationAxis = Vector3CrossProduct(modelForward, direction);
+
+                    const float dot = Vector3DotProduct(modelForward, direction);
+                    const float angle = acosf(Clamp(dot, -1.0f, 1.0f)) * RAD2DEG;
+
+                    DrawModelEx(
+                        modelIt->second,
+                        pos,
+                        Vector3Normalize(rotationAxis),
+                        angle,
+                        { scale, scale, scale },
+                        WHITE
+                    );
+
+                    modelDrawn = true;
+                }
             }
 
-            if (hovered && kin) {
-                labels.push_back({{scr.x + 10.0f, scr.y - 20.0f},
-                    TextFormat("MISSILE\nAlt: %.0fm\nSpd: %.1f kts", tf.altitude, kin->currentSpeedKnots), PURPLE});
-                if (const auto* seeker = registry.try_get<SeekerHead>(entity)) {
-                    const Vector3 tgt = ToRender(seeker->targetPos, seeker->targetAltitude);
+            // Keep the original marker as a fallback if no model is available.
+            if (!modelDrawn)
+                DrawSphere(pos, markerR * 0.6f, col);
+
+            if (kin)
+            {
+                const MathUtils::Vec2 tailNM = MathUtils::Sub(
+                    tf.pos,
+                    MathUtils::Scale(kin->headingVector, 0.5f)
+                );
+
+                DrawLine3D(pos, ToRender(tailNM, tf.altitude), ORANGE);
+            }
+
+            if (hovered && kin)
+            {
+                labels.push_back({
+                    { scr.x + 10.0f, scr.y - 20.0f },
+                    TextFormat(
+                        "MISSILE\nAlt: %.0fm\nSpd: %.1f kts",
+                        tf.altitude,
+                        kin->currentSpeedKnots
+                    ),
+                    PURPLE
+                });
+
+                if (const auto* seeker = registry.try_get<SeekerHead>(entity))
+                {
+                    const Vector3 tgt = ToRender(
+                        seeker->targetPos,
+                        seeker->targetAltitude
+                    );
+
                     DrawLine3D(pos, tgt, Fade(PURPLE, 0.7f));
                     DrawSphereWires(tgt, markerR * 2.0f, 6, 6, PURPLE);
                 }
@@ -356,29 +532,25 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
         }
     }
 
-    // PLACEHOLDER: reads RadarTrack.pos/altitude. The tracker rewrite will replace this with truth / measurement / estimate.
-    /* const auto& detectionData = registry.ctx().get<RadarDetectionData>();
-    for (const auto& [observerEntity, targetList] : detectionData.activeTracks) {
-        if (!registry.valid(observerEntity)) continue;
-        const auto& obsTf = registry.get<Transform2D>(observerEntity);
-        for (const auto& trk : targetList) {
-            const Color tc = trk.isMissing ? GRAY : YELLOW;            // gray = coasting, not seen last scan
-            const Vector3 tp = ToRender(trk.pos, trk.altitude);
-            DrawLine3D(ToRender(obsTf.pos, obsTf.altitude), tp, Fade(tc, 0.12f));
-            DrawSphereWires(tp, markerR * 1.6f, 6, 6, tc);
-            DrawLine3D(tp, ToRender(trk.pos, map.GetElevation(trk.pos)), Fade(tc, 0.25f));   // altitude stalk
-        }
-    } */
-
     EndMode3D();
 
     for (const auto& l : labels)
-        DrawText(l.text.c_str(), static_cast<int>(l.at.x), static_cast<int>(l.at.y), 20, l.color);
+    {
+        DrawText(
+            l.text.c_str(),
+            static_cast<int>(l.at.x),
+            static_cast<int>(l.at.y),
+            20,
+            l.color
+        );
+    }
 
     DrawFPS(10, 10);
     DrawText(scenario.scenarioName.c_str(), 10, 40, 20, LIGHTGRAY);
     DrawText(TextFormat("TIME COMPRESSION: %.0fx", timeScale), 10, 70, 20, YELLOW);
-    if (timeScale > 1000.0f) DrawText("WARNING: PHYSICS MAY BE UNSTABLE", 10, 95, 18, RED);
+
+    if (timeScale > 1000.0f)
+        DrawText("WARNING: PHYSICS MAY BE UNSTABLE", 10, 95, 18, RED);
 
     EndDrawing();
 }

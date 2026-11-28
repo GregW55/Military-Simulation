@@ -74,6 +74,7 @@ constexpr float MAX_PLAUSIBLE_VEL_CHANGE_KNOTS = 800.0f;
 constexpr float TRACK_DELETION_TIMEOUT_SEC = 10.0f;                     // Removed entirely after unrefreshed
 constexpr float TRACK_ACTIONABLE_FRESHNESS_SEC = 3.0f;                  // Must be fresher than this to engage/lock
 constexpr float TRACK_MIN_ACTIONABLE_AGE_SEC = 0.0001f;
+
 constexpr size_t TRACK_CONFIRM_WINDOW = 5;      // Window of previous tracks
 constexpr size_t TRACK_CONFIRM_HITS = 3;        // How many hits in the window are needed (3/5)
 constexpr size_t TRACK_MAX_MISSED_SCANS = 3;    // Track not hit by radar 3x consecutively; mark as missing
@@ -102,7 +103,7 @@ constexpr uint32_t NO_GLOBAL_TRACK = 0;
 // ==========================================
 constexpr float LAUNCH_SPEED_FRACTION = 0.25f;                          // ~25% max speed during launch from ship cell
 constexpr float MIN_TIME_BEFORE_SEEKER_ACTIVATION_SEC = 0.75f;          // Brief separation/boost phase
-constexpr float DESCENT_SAFETY_MARGIN_SEC = 2.5f;                       // Small buffer to avoid cutting it razor-thin
+constexpr float DESCENT_SAFETY_MARGIN_SEC = 0.05f;                       // Small buffer to avoid cutting it razor-thin
 
 constexpr float SEEKER_FOV_DEGREES = 45.0f;
 constexpr float SEEKER_IDENTITY_GATE_NM = 0.2f;

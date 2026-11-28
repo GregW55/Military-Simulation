@@ -57,7 +57,10 @@ struct DeadTag {};
 // =====================================
 // === PHYSICAL & SPATIAL COMPONENTS ===
 // =====================================
-
+struct VisualIdentity {
+    std::string modelId;
+    float modelScale = 1.0f;
+};
 struct Transform2D {
     MathUtils::Vec2 pos;
     float altitude;

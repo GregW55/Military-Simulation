@@ -105,6 +105,8 @@ void AegisEngine::SpawnScenarioUnits() {
 
                 float maxSpeed = stats.maxSpeedKnots > 1.0f ? stats.maxSpeedKnots : 30.0f;
 
+                registry.emplace<VisualIdentity>(entity, group.unitType, 1.0f);
+
                 registry.emplace<Transform2D>(entity,
                     MathUtils::Vec2{startX, startY},              // Location (Cartesian NM)
                 mastHeight,                                    // Altitude (Meters)

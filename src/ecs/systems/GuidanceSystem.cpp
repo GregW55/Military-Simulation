@@ -128,11 +128,9 @@ namespace {
 
                         seeker.targetAltitude = target.altitude;
 
-                        seeker.targetVerticalVelocityNMPerSec =
-                            target.verticalVelocityNMPerSec;
+                        seeker.targetVerticalVelocityNMPerSec = target.verticalVelocityNMPerSec;
 
-                        seeker.lastTargetMeasurementTimeSec =
-                            target.lastMeasurementTimeSec;
+                        seeker.lastTargetMeasurementTimeSec = target.lastMeasurementTimeSec;
 
                         seeker.timeSinceLastCorrelation = 0.0f;
 
@@ -157,11 +155,8 @@ namespace {
         // Semi-active seekers depend on external tracking support.
         // Active radar seekers can continue inertially until their
         // own radar enters the terminal phase.
-        if (!seeker.hasLiveTarget &&
-            seeker.type != SeekerType::ACTIVE_RADAR)
-        {
+        if (!seeker.hasLiveTarget && seeker.type != SeekerType::ACTIVE_RADAR)
             seeker.phase = GuidancePhase::INERTIAL_BLIND;
-        }
 
         // ============================================================
         // 3. PREDICT TARGET POSITION

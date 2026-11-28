@@ -51,6 +51,13 @@ private:
 
     float timeScale = 1.0f;
     bool showRadarRings = false;
+
+    std::unordered_map<std::string, Model> shipModels;
+    std::unordered_map<std::string, Model> missileModels;
+
+    void LoadUnitModels();
+    void UnloadUnitModels();
+
     // === 2D ===
     /* Camera2D camera = {};
      * std::unordered_map<std::string, Texture> tileTextures;
