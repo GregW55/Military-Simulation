@@ -460,17 +460,26 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
                 if (modelIt != missileModels.end())
                 {
                     Vector3 modelForward;
+                    Vector3 direction;
 
                     if (modelIt->first == "SM_6" || modelIt->first == "SM_2") {
-                        modelForward = {1.0f, 0.0f, 0.0f };
-                    }
-                    else modelForward = {-1.0f, 0.0f, 0.0f };
+                        modelForward = {0.0f, -1.0f, 0.0f };
 
-                    const Vector3 direction = Vector3Normalize({
-                        -kin->headingVector.x,
-                        -kin->verticalVelocityNMPerSec,
-                        -kin->headingVector.y
-                    });
+                        direction = Vector3Normalize({
+                           -kin->headingVector.x,
+                           -kin->verticalVelocityNMPerSec,
+                           kin->headingVector.y
+                        });
+                    }
+                    else {
+                        modelForward = {-1.0f, 0.0f, 0.0f };
+
+                        direction = Vector3Normalize({
+                            -kin->headingVector.x,
+                            -kin->verticalVelocityNMPerSec,
+                            -kin->headingVector.y
+                        });
+                    }
 
                     const float scale = 0.075f;
 

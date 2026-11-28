@@ -22,6 +22,7 @@ int main(int argc, char* argv[]) {
 
     if (headless) std::cout << "Starting Headless Batch Run. Seed: " << seed << "\n";
 
+    SetTraceLogLevel(LOG_ERROR);
     AegisEngine engine;
     if (engine.Initialize(headless, seed)) {
         engine.Run();
