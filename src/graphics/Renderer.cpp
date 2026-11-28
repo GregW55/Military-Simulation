@@ -461,23 +461,24 @@ void Renderer::Draw(const entt::registry& registry, const ScenarioData& scenario
                 {
                     Vector3 modelForward;
                     Vector3 direction;
+                    const float horizontalSpeed = kin->currentSpeedKnots * KNOTS_TO_NM_PER_SEC;
 
                     if (modelIt->first == "SM_6" || modelIt->first == "SM_2") {
                         modelForward = {0.0f, -1.0f, 0.0f };
 
                         direction = Vector3Normalize({
-                           -kin->headingVector.x,
+                           -kin->headingVector.x * horizontalSpeed,
                            -kin->verticalVelocityNMPerSec,
-                           kin->headingVector.y
+                           kin->headingVector.y * horizontalSpeed
                         });
                     }
                     else {
                         modelForward = {-1.0f, 0.0f, 0.0f };
 
                         direction = Vector3Normalize({
-                            -kin->headingVector.x,
+                            -kin->headingVector.x * horizontalSpeed,
                             -kin->verticalVelocityNMPerSec,
-                            -kin->headingVector.y
+                            -kin->headingVector.y * horizontalSpeed
                         });
                     }
 
