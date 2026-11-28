@@ -36,34 +36,7 @@ ScenarioData ScenarioParser::Load(const std::string& filepath) {
 
     // Map the root variables (with safe defaults)
     data.scenarioName = j.value("scenario_name", "UNNAMED_SCENARIO");
-
-    // Safely Map the Heightmap
-    if (j.contains("map_data") && j["map_data"].contains("heightmap")) {
-        const auto& hm = j["map_data"]["heightmap"];
-        data.heightMap.filepath = hm.value("filepath", "");
-        data.heightMap.offsetX = hm.value("offset_x", 0.0f);
-        data.heightMap.offsetY = hm.value("offset_y", 0.0f);
-        data.heightMap.scale = hm.value("scale", 1.0f);
-    } else {
-        std::cerr << "WARNING: No heightmap found in scenario." << std::endl;
-    }
-
-    // Safely Loop through the Map Tiles
-    if (j.contains("map_data") && j["map_data"].contains("visual_tiles")) {
-        for (const auto& tileJson : j["map_data"]["visual_tiles"]) {
-            MapTile tile;
-            tile.id = tileJson.value("id", "UNKNOWN_TILE");
-            tile.filepath = tileJson.value("filepath", "");
-            tile.offsetX = tileJson.value("offset_x", 0.0f);
-            tile.offsetY = tileJson.value("offset_y", 0.0f);
-            tile.cropL = tileJson.value("crop_l", 0.0f);
-            tile.cropR = tileJson.value("crop_r", 0.0f);
-            tile.cropT = tileJson.value("crop_t", 0.0f);
-            tile.cropB = tileJson.value("crop_b", 0.0f);
-
-            data.visualTiles.push_back(tile);
-        }
-    }
+    
 
     // Safely Loop through the Spawner Groups
     if (j.contains("groups")) {

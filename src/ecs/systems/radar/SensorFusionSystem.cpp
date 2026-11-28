@@ -226,8 +226,7 @@ void Systems::SensorFusionSystem(
         if (!observerIFF)
             continue;
 
-        // Select the global database belonging to the
-        // observer's own side.
+        // Select the global database belonging to the observer's own side.
         auto& side = masterTable.GetSide(observerIFF->isHostile);
 
 

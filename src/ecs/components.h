@@ -323,7 +323,7 @@ struct Magazine {
 };
 
 struct ActiveEngagement {
-    uint32_t systemTrackId = 0;
+    uint32_t globalTrackId = NO_GLOBAL_TRACK;
     entt::entity missileEntity = entt::null;
     float timeFiredSec = 0.0f;
     bool missileAlive = true;

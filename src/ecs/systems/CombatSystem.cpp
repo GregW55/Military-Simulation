@@ -16,20 +16,14 @@ namespace {
         float distanceToTarget = 0.0f;
     };
 
-    void PruneDeadEngagements(entt::registry& registry) {
-        for (auto [entity, log] : registry.view<EngagementLog>().each()) {
-
-            // Update the alive status of each tracked missile
-            for (auto& eng : log.current) {
-                if (eng.missileAlive) {
-                    eng.missileAlive = registry.valid(eng.missileEntity) &&
-                                       !registry.all_of<DeadTag>(eng.missileEntity);
-                }
-            }
-
-            // Remove dead engagements from the vector
-            std::erase_if(log.current, [](const ActiveEngagement& e) {
-                return !e.missileAlive;
+    void PruneDeadEngagements(entt::registry& registry)
+    {
+        for (auto [entity, log] : registry.view<EngagementLog>().each())
+        {
+            std::erase_if(log.current, [&](const ActiveEngagement& eng)
+            {
+                return !registry.valid(eng.missileEntity) ||
+                       registry.all_of<DeadTag>(eng.missileEntity);
             });
         }
     }
@@ -59,7 +53,7 @@ namespace {
         int count = 0;
         for (const auto& eng : log.current) {
             if (!eng.missileAlive) continue;
-            if (eng.systemTrackId == systemTrackId) count++;
+            if (eng.globalTrackId == systemTrackId) count++;
         }
         return count;
     }
@@ -298,32 +292,41 @@ namespace {
         return true;
     }
 
-    bool SortThreatsByPriority(entt::entity entity, RadarDetectionData& detectionData, std::vector<RadarTrack>*& outTracks)
+    bool SortThreatsByPriority(
+        const std::unordered_map<uint32_t, MasterTrackTable::GlobalTrack>& globalTracks,
+        std::vector<const RadarTrack*>& outTracks)
     {
-        // --- Sort tracks by threat score (Highest priority first) ---
+        outTracks.clear();
+        if (globalTracks.empty()) return false;
 
-        // Look up the entity in the map safely without auto-inserting
-        auto it = detectionData.activeTracks.find(entity);
-        if (it == detectionData.activeTracks.end()) return false;
+        // Collect pointers to the actual RadarTrack objects
+        for (const auto& [globalTrackId, globalTrack] : globalTracks)
+        {
+            const RadarTrack& track = globalTrack.track;
 
-        // Grab a reference to the actual vector of tracks
-        auto& tracks = it->second;
-        if (tracks.empty()) return false;
+            if (track.lifecycle == TrackLifecycle::DESTROYED ||
+                track.lifecycle == TrackLifecycle::MISSING ||
+                track.lifecycle == TrackLifecycle::TENTATIVE) {
+                continue;
+            }
 
-        // Sort the real tracks in place
-        std::sort(tracks.begin(), tracks.end(),
-            [](const RadarTrack& a, const RadarTrack& b) {
-            return a.threatScore > b.threatScore;
-        });
+            outTracks.push_back(&track);
+        }
+        if (outTracks.empty()) return false;
 
-        outTracks = &tracks;
+        // Sort by threat score, highest priority first
+        std::sort(outTracks.begin(), outTracks.end(),
+            [](const RadarTrack* a, const RadarTrack* b)
+            {
+            return a->threatScore > b->threatScore;
+            });
+
         return true;
     }
 }
 
 void Systems::CombatSystem(entt::registry& registry) {
-    registry.ctx().get<SharedThreatPicture>().Clear();
-    auto& detectionData = registry.ctx().get<RadarDetectionData>();
+    auto& masterTable = registry.ctx().get<MasterTrackTable>();
 
     PruneDeadEngagements(registry);
 
@@ -346,14 +349,17 @@ void Systems::CombatSystem(entt::registry& registry) {
             brain.currentState != TacticalState::DEFEND &&
             brain.currentState != TacticalState::INTERCEPT) return;
 
-        std::vector<RadarTrack>* tracks = nullptr;
+        std::vector<const RadarTrack*> tracks;
 
         // Does the lookup, sorts in place, and bails out if empty/missing
-        if (!SortThreatsByPriority(entity, detectionData, tracks)) return;
+        auto& side = masterTable.GetSide(iff.isHostile);
+
+        if (!SortThreatsByPriority(side.activeGlobalTracks, tracks)) return;
 
         // Loop through the sorted tracks at the pointer
-        for (const RadarTrack& threat : *tracks) {
-            if (TryEngageThreat(registry, entity, transform, iff, mag, log, threat)) {
+        for (const RadarTrack* threat : tracks)
+        {
+            if (TryEngageThreat(registry, entity, transform, iff, mag, log, *threat)) {
                 break; // We've fired at a inbound threat
             }
         }

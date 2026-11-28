@@ -39,11 +39,6 @@ bool AegisEngine::Initialize(const bool headless, int seed) {
                      "working directory, and rerun make_terrain.py if it is invalid.\n";
         return false;
     }
-    {   // TEMPORARY: remove after checking
-        auto& m = registry.ctx().get<MapProjection>();
-        std::cout << "Yushan:   " << m.GetElevation(m.GeoToNM(23.47f, 120.957f)) << " m (expect ~3500-3900)\n";
-        std::cout << "Open sea: " << m.GetElevation(m.GeoToNM(24.5f, 125.5f))   << " m (expect 0)\n";
-    }
 
     if (!headless) renderer.Init(scenario);
     if (!headless) renderer.BuildTerrain(registry.ctx().get<MapProjection>(), "../assets/terrain");
